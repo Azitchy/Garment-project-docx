@@ -24,6 +24,30 @@
         @endforeach
     </section>
 
+    <section class="card" style="margin-top:16px;">
+        <div class="section-title">
+            <div>
+                <h2>Inventory Features</h2>
+                <p class="subtle" style="margin:6px 0 0;">All inventory changes now live in the admin CRUD flow.</p>
+            </div>
+            <a class="pill" href="{{ route('admin.inventory-records.index') }}">Open Inventory CRUD</a>
+        </div>
+        <div class="grid-cards" style="grid-template-columns:repeat(4,minmax(0,1fr));">
+            @foreach ($inventoryFeatures as $feature)
+                <a class="card" href="{{ $feature['link'] }}" style="display:block;">
+                    <div class="metric" style="align-items:flex-start;">
+                        <div>
+                            <h3>{{ $feature['title'] }}</h3>
+                            <strong>{{ $feature['count'] }}</strong>
+                            <span class="trend flat">{{ $feature['description'] }}</span>
+                        </div>
+                        <div class="icon-box tone-blue">IN</div>
+                    </div>
+                </a>
+            @endforeach
+        </div>
+    </section>
+
     <section class="content-grid">
         <div class="card">
             <div class="section-title">

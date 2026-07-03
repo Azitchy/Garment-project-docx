@@ -2,18 +2,18 @@
 
 @section('content')
     <div class="login-card">
-        <div class="brand" style="border:0;padding:0 0 18px;">
-            <div class="brand-mark">GMS</div>
+        <div class="login-brand">
+            <div class="login-brand-mark">GMS</div>
             <div>
                 <strong>Garment Management System</strong>
                 <small>Admin sign in</small>
             </div>
         </div>
 
-        <h1 style="margin:0 0 10px;font-size:2rem;">Welcome back</h1>
-        <p class="subtle" style="margin-bottom:8px;">Use the admin credentials to access the dashboard.</p>
+        <h1>Welcome back</h1>
+        <p>Use the admin credentials to access the dashboard.</p>
 
-        <div style="padding:12px 14px;border-radius:14px;background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;margin:14px 0 6px;">
+        <div class="login-note">
             Login: <strong>admin#gms.com</strong> | Password: <strong>password</strong>
         </div>
 
@@ -21,27 +21,37 @@
             @csrf
             <div class="field">
                 <label for="email">Email</label>
-                <input id="email" type="text" name="email" value="{{ old('email') }}" placeholder="admin#gms.com" required autofocus>
+                <input id="email" type="text" name="email" value="{{ old('email') }}" placeholder="username@gmail.com" required autofocus>
                 @error('email')<div class="error">{{ $message }}</div>@enderror
             </div>
 
             <div class="field">
                 <label for="password">Password</label>
-                <input id="password" type="password" name="password" placeholder="password" required>
+                <input id="password" type="password" name="password" placeholder="Password" required>
                 @error('password')<div class="error">{{ $message }}</div>@enderror
             </div>
 
             <div class="form-actions">
-                <label style="display:flex;align-items:center;gap:8px;color:#475569;">
+                <label style="display:flex;align-items:center;gap:8px;">
                     <input type="checkbox" name="remember" value="1">
                     Remember me
                 </label>
-                <a href="{{ route('home') }}" style="color:#2563eb;">Go to frontend</a>
+                <a href="{{ route('home') }}">Go to frontend</a>
             </div>
 
-            <div style="margin-top:18px;">
+            <div style="margin-top:20px;">
                 <button class="button primary" type="submit" style="width:100%;">Sign in</button>
             </div>
         </form>
+
+        <div class="social-row" aria-label="Continue with social accounts">
+            <div class="social-btn">G</div>
+            <div class="social-btn">GH</div>
+            <div class="social-btn">f</div>
+        </div>
+
+        <div class="login-footer-link">
+            Don't have an account? <a href="{{ route('home') }}">Go to frontend</a>
+        </div>
     </div>
 @endsection

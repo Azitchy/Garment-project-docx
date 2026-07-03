@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\DashboardRecord;
 use App\Models\Garment;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -14,6 +15,16 @@ class AdminSectionController extends Controller
     {
         $sections = self::sections();
         abort_unless(array_key_exists($section, $sections), 404);
+
+        if ($section === 'inventory') {
+            return view('admin.inventory', [
+                'sidebarSection' => 'inventory',
+                'sectionKey' => 'inventory',
+                'sectionMeta' => $sections[$section],
+                'highlights' => $this->buildHighlights('inventory'),
+                'inventoryOverview' => $this->inventoryOverview(),
+            ]);
+        }
 
         $viewData = [
             'sidebarSection' => $section,
@@ -26,10 +37,6 @@ class AdminSectionController extends Controller
                 ->paginate(10)
                 ->withQueryString(),
         ];
-
-        if ($section === 'inventory') {
-            $viewData['inventoryOverview'] = $this->inventoryOverview();
-        }
 
         if ($section === 'hr-payroll') {
             $viewData['hrPayrollOverview'] = $this->hrPayrollOverview();
@@ -54,6 +61,11 @@ class AdminSectionController extends Controller
     {
         $pages = $this->inventoryPages();
         abort_unless(array_key_exists($page, $pages), 404);
+        $pageMeta = $pages[$page];
+        $crudType = $pageMeta['crudType'] ?? null;
+        $records = $crudType !== null
+            ? $this->inventoryRecordsQuery($crudType)->paginate(8)->withQueryString()
+            : DashboardRecord::query()->where('section', 'inventory')->latest()->paginate(8)->withQueryString();
 
         return view('admin.inventory-page', [
             'sidebarSection' => 'inventory',
@@ -61,14 +73,13 @@ class AdminSectionController extends Controller
             'sectionKey' => 'inventory',
             'sectionMeta' => self::sections()['inventory'],
             'pageKey' => $page,
-            'pageMeta' => $pages[$page],
+            'pageMeta' => $pageMeta,
             'highlights' => $this->buildHighlights('inventory'),
+            'inventoryMetrics' => $this->inventoryModuleMetrics($page),
+            'inventoryCalculation' => $this->inventoryCalculation($page),
             'inventoryOverview' => $this->inventoryOverview(),
-            'records' => DashboardRecord::query()
-                ->where('section', 'inventory')
-                ->latest()
-                ->paginate(10)
-                ->withQueryString(),
+            'records' => $records,
+            'crudType' => $crudType,
         ]);
     }
 
@@ -241,7 +252,7 @@ class AdminSectionController extends Controller
                 ],
                 'actions' => [
                     'Back to Orders Overview' => route('dashboard.section', 'orders'),
-                    'Open Inventory Sales Process' => route('dashboard.inventory.page', 'sales-process'),
+                    'Open Inventory Stock Out' => route('dashboard.inventory.page', 'stock-out'),
                 ],
             ],
             'sample-workflow' => [
@@ -344,7 +355,7 @@ class AdminSectionController extends Controller
         return [
             'dashboard' => ['title' => 'Dashboard', 'subtitle' => 'Main control center for garment operations.'],
             'master-data' => ['title' => 'Master Data', 'subtitle' => 'Nepal-ready customer, supplier, and product records.'],
-            'inventory' => ['title' => 'Inventory', 'subtitle' => 'Sales flow, stock control, reorder alerts, and reporting.'],
+            'inventory' => ['title' => 'Inventory', 'subtitle' => 'Product registration, stock flow, barcode tools, transfers, alerts, and analytics.'],
             'products' => ['title' => 'Products', 'subtitle' => 'Product catalog and item master data.'],
             'customers' => ['title' => 'Customers', 'subtitle' => 'Customer records and buyer pipeline.'],
             'vendors' => ['title' => 'Vendors', 'subtitle' => 'Fabric, trims, and service suppliers.'],
@@ -404,12 +415,20 @@ class AdminSectionController extends Controller
                 'icon' => 'IN',
                 'children' => [
                     'inventory' => ['label' => 'Inventory Overview', 'route' => ['dashboard.section', ['inventory']]],
-                    'sales-process' => ['label' => 'Sales Process', 'route' => ['dashboard.inventory.page', ['sales-process']]],
-                    'monitoring' => ['label' => 'Monitoring', 'route' => ['dashboard.inventory.page', ['monitoring']]],
-                    'reorder' => ['label' => 'Reorder', 'route' => ['dashboard.inventory.page', ['reorder']]],
-                    'reports' => ['label' => 'Reports', 'route' => ['dashboard.inventory.page', ['reports']]],
-                    'stock-items' => ['label' => 'Stock Items', 'route' => ['dashboard.section', ['stock-items']]],
-                    'stock-movements' => ['label' => 'Stock Movements', 'route' => ['dashboard.section', ['stock-movements']]],
+                    'product-registration' => ['label' => 'Product Registration', 'route' => ['dashboard.inventory.page', ['product-registration']]],
+                    'stock-in' => ['label' => 'Stock In', 'route' => ['dashboard.inventory.page', ['stock-in']]],
+                    'stock-out' => ['label' => 'Stock Out', 'route' => ['dashboard.inventory.page', ['stock-out']]],
+                    'real-time-tracking' => ['label' => 'Real-Time Tracking', 'route' => ['dashboard.inventory.page', ['real-time-tracking']]],
+                    'barcode-qr-support' => ['label' => 'Barcode / QR', 'route' => ['dashboard.inventory.page', ['barcode-qr-support']]],
+                    'supplier-management' => ['label' => 'Suppliers', 'route' => ['dashboard.inventory.page', ['supplier-management']]],
+                    'customer-management' => ['label' => 'Customers', 'route' => ['dashboard.inventory.page', ['customer-management']]],
+                    'purchase-management' => ['label' => 'Purchases', 'route' => ['dashboard.inventory.page', ['purchase-management']]],
+                    'sales-management' => ['label' => 'Sales', 'route' => ['dashboard.inventory.page', ['sales-management']]],
+                    'inventory-transfers' => ['label' => 'Transfers', 'route' => ['dashboard.inventory.page', ['inventory-transfers']]],
+                    'stock-adjustments' => ['label' => 'Adjustments', 'route' => ['dashboard.inventory.page', ['stock-adjustments']]],
+                    'low-stock-alerts' => ['label' => 'Low Stock Alerts', 'route' => ['dashboard.inventory.page', ['low-stock-alerts']]],
+                    'reports-analytics' => ['label' => 'Reports & Analytics', 'route' => ['dashboard.inventory.page', ['reports-analytics']]],
+                    'inventory-admin' => ['label' => 'Inventory CRUD', 'href' => route('admin.inventory-records.index')],
                 ],
             ],
             'production' => [
@@ -515,9 +534,10 @@ class AdminSectionController extends Controller
                 ['label' => 'Backorder', 'value' => 2],
             ],
             'inventory' => [
-                ['label' => 'Current Stock', 'value' => Garment::query()->sum('stock'), 'tone' => 'blue', 'icon' => 'CS'],
-                ['label' => 'Low Stock SKUs', 'value' => Garment::query()->where('stock', '<=', 5)->count(), 'tone' => 'amber', 'icon' => 'LS'],
-                ['label' => 'Inventory Value', 'value' => '$' . number_format(Garment::query()->get()->sum(fn (Garment $garment): float => (float) $garment->price * (int) $garment->stock), 2), 'tone' => 'green', 'icon' => 'IV'],
+                ['label' => 'Products Registered', 'value' => Garment::query()->count(), 'tone' => 'blue', 'icon' => 'PR'],
+                ['label' => 'Available Stock', 'value' => Garment::query()->sum('stock'), 'tone' => 'green', 'icon' => 'AS'],
+                ['label' => 'Reserved Stock', 'value' => 0, 'tone' => 'amber', 'icon' => 'RS'],
+                ['label' => 'Damaged Stock', 'value' => 0, 'tone' => 'violet', 'icon' => 'DS'],
             ],
             'samples' => [
                 ['label' => 'Sample Requests', 'value' => DashboardRecord::query()->where('section', $section)->count()],
@@ -544,140 +564,398 @@ class AdminSectionController extends Controller
 
     private function inventoryOverview(): array
     {
-        $value = Garment::query()->get()->sum(fn (Garment $garment): float => (float) $garment->price * (int) $garment->stock);
+        $products = $this->inventoryRecordsQuery('product-registration')->get();
+        $lowStockAlerts = $this->inventoryRecordsQuery('low-stock-alerts')->get();
+        $productCount = $products->isNotEmpty() ? $products->count() : Garment::query()->count();
+        $availableStock = $products->isNotEmpty()
+            ? $products->sum(fn (DashboardRecord $record): int => max((int) $record->quantity - (int) $record->reserved_quantity - (int) $record->damaged_quantity, 0))
+            : Garment::query()->sum('stock');
+        $inventoryValue = $products->isNotEmpty()
+            ? $products->sum(fn (DashboardRecord $record): float => (float) $record->cost_price * (int) $record->quantity)
+            : Garment::query()->get()->sum(fn (Garment $garment): float => (float) $garment->price * (int) $garment->stock);
+        $lowStockCount = $lowStockAlerts->filter(fn (DashboardRecord $record): bool => $record->alert_threshold !== null && (int) $record->quantity <= (int) $record->alert_threshold)->count();
 
         return [
-            'flow' => [
-                'title' => 'Sales Process',
-                'subtitle' => 'Customer Order -> Sales Order -> Picking -> Packing -> Delivery -> Invoice -> Stock Reduced',
-                'steps' => [
-                    ['label' => 'Customer Order', 'meta' => 'Captured from sales team or buyer portal.'],
-                    ['label' => 'Sales Order', 'meta' => 'Converted into a fulfillable demand record.'],
-                    ['label' => 'Picking', 'meta' => 'Warehouse reserves stock and prepares items.'],
-                    ['label' => 'Packing', 'meta' => 'Items are packed for shipment.'],
-                    ['label' => 'Delivery', 'meta' => 'Goods leave the warehouse.'],
-                    ['label' => 'Invoice', 'meta' => 'Billing is issued and tracked.'],
-                    ['label' => 'Stock Reduced', 'meta' => 'Inventory balances update automatically.'],
-                ],
-            ],
-            'monitoring' => [
-                'title' => 'Inventory Monitoring',
-                'items' => [
-                    'Current stock',
-                    'Reserved stock',
-                    'Available stock',
-                    'Damaged stock',
-                    'Expired stock',
-                    'Returned items',
-                ],
-            ],
-            'reorder' => [
-                'title' => 'Reorder Management',
-                'items' => [
-                    'Low stock notification',
-                    'Purchase request generated',
-                    'New purchase order created',
-                ],
-            ],
-            'reports' => [
-                'title' => 'Reporting',
-                'items' => [
-                    'Stock Summary',
-                    'Stock Movement',
-                    'Purchase Report',
-                    'Sales Report',
-                    'Warehouse Report',
-                    'Expiry Report',
-                    'Inventory Valuation',
-                    'Fast-moving items',
-                    'Slow-moving items',
-                ],
-            ],
-            'quickActions' => [
-                ['label' => 'Sales Process', 'target' => 'sales-process'],
-                ['label' => 'Inventory Monitoring', 'target' => 'monitoring'],
-                ['label' => 'Reorder Management', 'target' => 'reorder'],
-                ['label' => 'Reporting', 'target' => 'reports'],
+            'hero' => [
+                'title' => 'Inventory Control Center',
+                'subtitle' => 'Handle product registration, stock movement, supplier/customer records, alerts, and reporting in one place.',
+                'banner' => 'This module replaces the old inventory flow pages with a broader operational inventory suite.',
             ],
             'stats' => [
-                ['label' => 'Current Stock', 'value' => Garment::query()->sum('stock')],
-                ['label' => 'Reserved Stock', 'value' => max(0, Garment::query()->sum('stock') - Garment::query()->where('stock', '<=', 5)->sum('stock'))],
-                ['label' => 'Available Stock', 'value' => Garment::query()->sum('stock') - 2],
-                ['label' => 'Damaged Stock', 'value' => 0],
-                ['label' => 'Expired Stock', 'value' => 0],
-                ['label' => 'Returned Items', 'value' => 0],
-                ['label' => 'Inventory Valuation', 'value' => '$' . number_format($value, 2)],
+                ['label' => 'Products Registered', 'value' => $productCount],
+                ['label' => 'Available Stock', 'value' => $availableStock],
+                ['label' => 'Current Inventory Value', 'value' => 'Rs. ' . number_format($inventoryValue, 2)],
+                ['label' => 'Low Stock Items', 'value' => $lowStockCount],
+            ],
+            'modules' => [
+                ['title' => 'Product Registration', 'summary' => 'Add products, assign unique SKU or barcode, and store core item details.'],
+                ['title' => 'Stock In', 'summary' => 'Record goods received from suppliers and update quantities automatically.'],
+                ['title' => 'Stock Out', 'summary' => 'Deduct stock when items are sold or issued and capture customer details.'],
+                ['title' => 'Real-Time Tracking', 'summary' => 'Show available, reserved, and damaged stock with instant updates.'],
+                ['title' => 'Barcode / QR Support', 'summary' => 'Scan items faster and reduce manual entry mistakes.'],
+                ['title' => 'Supplier Management', 'summary' => 'Keep supplier records, contacts, and purchase history in one place.'],
+                ['title' => 'Customer Management', 'summary' => 'Maintain buyer records and track purchase history or credit sales.'],
+                ['title' => 'Purchase Management', 'summary' => 'Create purchase orders and increase stock when receipts are confirmed.'],
+                ['title' => 'Sales Management', 'summary' => 'Generate invoices, handle returns, and reduce stock after sales.'],
+                ['title' => 'Inventory Transfers', 'summary' => 'Move goods between warehouses or branches with transfer status tracking.'],
+                ['title' => 'Stock Adjustments', 'summary' => 'Correct counts for damage, theft, expiry, or physical count differences.'],
+                ['title' => 'Low Stock Alerts', 'summary' => 'Notify users at minimum thresholds and suggest reorder quantities.'],
+                ['title' => 'Reports & Analytics', 'summary' => 'Review stock, sales, purchases, valuation, and movement performance.'],
+            ],
+            'quickActions' => [
+                ['label' => 'Product Registration', 'target' => 'product-registration'],
+                ['label' => 'Stock In', 'target' => 'stock-in'],
+                ['label' => 'Stock Out', 'target' => 'stock-out'],
+                ['label' => 'Reports & Analytics', 'target' => 'reports-analytics'],
             ],
         ];
+    }
+
+    private function inventoryModuleMetrics(string $type): array
+    {
+        $records = $this->inventoryRecordsQuery($type)->get();
+        $count = $records->count();
+
+        return match ($type) {
+            'product-registration' => [
+                ['label' => 'Products', 'value' => $count, 'tone' => 'blue', 'icon' => 'PR'],
+                ['label' => 'On Hand Qty', 'value' => $records->sum(fn (DashboardRecord $record): int => (int) $record->quantity), 'tone' => 'green', 'icon' => 'QY'],
+                ['label' => 'Inventory Value', 'value' => 'Rs. ' . number_format($records->sum(fn (DashboardRecord $record): float => (float) $record->cost_price * (int) $record->quantity), 2), 'tone' => 'amber', 'icon' => 'IV'],
+                ['label' => 'Avg Sale Price', 'value' => $count > 0 ? 'Rs. ' . number_format($records->avg(fn (DashboardRecord $record): float => (float) $record->selling_price), 2) : 'Rs. 0.00', 'tone' => 'violet', 'icon' => 'SP'],
+            ],
+            'stock-in' => [
+                ['label' => 'Receipts', 'value' => $count, 'tone' => 'blue', 'icon' => 'SI'],
+                ['label' => 'Qty Received', 'value' => $records->sum(fn (DashboardRecord $record): int => (int) $record->quantity), 'tone' => 'green', 'icon' => 'QY'],
+                ['label' => 'Received Value', 'value' => 'Rs. ' . number_format($records->sum(fn (DashboardRecord $record): float => (float) $record->cost_price * (int) $record->quantity), 2), 'tone' => 'amber', 'icon' => 'RV'],
+                ['label' => 'Latest Date', 'value' => optional($records->sortByDesc('transaction_date')->first()?->transaction_date)->format('M d, Y') ?? 'N/A', 'tone' => 'violet', 'icon' => 'DT'],
+            ],
+            'stock-out' => [
+                ['label' => 'Issues', 'value' => $count, 'tone' => 'blue', 'icon' => 'SO'],
+                ['label' => 'Qty Issued', 'value' => $records->sum(fn (DashboardRecord $record): int => (int) $record->quantity), 'tone' => 'green', 'icon' => 'QY'],
+                ['label' => 'Sales Value', 'value' => 'Rs. ' . number_format($records->sum(fn (DashboardRecord $record): float => (float) $record->selling_price * (int) $record->quantity), 2), 'tone' => 'amber', 'icon' => 'SV'],
+                ['label' => 'Returns', 'value' => $records->sum(fn (DashboardRecord $record): int => (int) $record->return_quantity), 'tone' => 'violet', 'icon' => 'RT'],
+            ],
+            'real-time-tracking' => [
+                ['label' => 'Tracked Items', 'value' => $count, 'tone' => 'blue', 'icon' => 'RT'],
+                ['label' => 'Available', 'value' => $records->sum(fn (DashboardRecord $record): int => max((int) $record->quantity - (int) $record->reserved_quantity - (int) $record->damaged_quantity, 0)), 'tone' => 'green', 'icon' => 'AV'],
+                ['label' => 'Reserved', 'value' => $records->sum(fn (DashboardRecord $record): int => (int) $record->reserved_quantity), 'tone' => 'amber', 'icon' => 'RS'],
+                ['label' => 'Damaged', 'value' => $records->sum(fn (DashboardRecord $record): int => (int) $record->damaged_quantity), 'tone' => 'violet', 'icon' => 'DG'],
+            ],
+            'barcode-qr-support' => [
+                ['label' => 'Tagged Items', 'value' => $records->whereNotNull('barcode')->count(), 'tone' => 'blue', 'icon' => 'BC'],
+                ['label' => 'SKU Coverage', 'value' => $count > 0 ? round(($records->whereNotNull('sku')->count() / $count) * 100, 1) . '%' : '0%', 'tone' => 'green', 'icon' => 'SK'],
+                ['label' => 'Barcode Coverage', 'value' => $count > 0 ? round(($records->whereNotNull('barcode')->count() / $count) * 100, 1) . '%' : '0%', 'tone' => 'amber', 'icon' => 'QR'],
+                ['label' => 'Active Labels', 'value' => $records->where('is_active', true)->count(), 'tone' => 'violet', 'icon' => 'AL'],
+            ],
+            'supplier-management' => [
+                ['label' => 'Suppliers', 'value' => $count, 'tone' => 'blue', 'icon' => 'SU'],
+                ['label' => 'Contacts', 'value' => $records->whereNotNull('contact_phone')->count(), 'tone' => 'green', 'icon' => 'CT'],
+                ['label' => 'Purchase Links', 'value' => $records->whereNotNull('purchase_order_no')->count(), 'tone' => 'amber', 'icon' => 'PO'],
+                ['label' => 'Active Records', 'value' => $records->where('is_active', true)->count(), 'tone' => 'violet', 'icon' => 'AC'],
+            ],
+            'customer-management' => [
+                ['label' => 'Customers', 'value' => $count, 'tone' => 'blue', 'icon' => 'CU'],
+                ['label' => 'Contacts', 'value' => $records->whereNotNull('contact_phone')->count(), 'tone' => 'green', 'icon' => 'CT'],
+                ['label' => 'Sales Links', 'value' => $records->whereNotNull('sale_invoice_no')->count(), 'tone' => 'amber', 'icon' => 'SI'],
+                ['label' => 'Active Records', 'value' => $records->where('is_active', true)->count(), 'tone' => 'violet', 'icon' => 'AC'],
+            ],
+            'purchase-management' => [
+                ['label' => 'Purchase Orders', 'value' => $count, 'tone' => 'blue', 'icon' => 'PO'],
+                ['label' => 'Qty Ordered', 'value' => $records->sum(fn (DashboardRecord $record): int => (int) $record->quantity), 'tone' => 'green', 'icon' => 'QY'],
+                ['label' => 'Purchase Value', 'value' => 'Rs. ' . number_format($records->sum(fn (DashboardRecord $record): float => (float) $record->cost_price * (int) $record->quantity), 2), 'tone' => 'amber', 'icon' => 'PV'],
+                ['label' => 'Invoices', 'value' => $records->whereNotNull('purchase_invoice_no')->count(), 'tone' => 'violet', 'icon' => 'IN'],
+            ],
+            'sales-management' => [
+                ['label' => 'Sales Orders', 'value' => $count, 'tone' => 'blue', 'icon' => 'SO'],
+                ['label' => 'Qty Sold', 'value' => $records->sum(fn (DashboardRecord $record): int => (int) $record->quantity), 'tone' => 'green', 'icon' => 'QY'],
+                ['label' => 'Sales Value', 'value' => 'Rs. ' . number_format($records->sum(fn (DashboardRecord $record): float => (float) $record->selling_price * (int) $record->quantity), 2), 'tone' => 'amber', 'icon' => 'SV'],
+                ['label' => 'Refunds', 'value' => 'Rs. ' . number_format($records->sum(fn (DashboardRecord $record): float => (float) $record->refund_amount), 2), 'tone' => 'violet', 'icon' => 'RF'],
+            ],
+            'inventory-transfers' => [
+                ['label' => 'Transfers', 'value' => $count, 'tone' => 'blue', 'icon' => 'TR'],
+                ['label' => 'Qty Moved', 'value' => $records->sum(fn (DashboardRecord $record): int => (int) $record->quantity), 'tone' => 'green', 'icon' => 'QY'],
+                ['label' => 'Completed', 'value' => $records->where('transfer_status', 'Completed')->count(), 'tone' => 'amber', 'icon' => 'CP'],
+                ['label' => 'In Transit', 'value' => $records->where('transfer_status', 'In Transit')->count(), 'tone' => 'violet', 'icon' => 'IT'],
+            ],
+            'stock-adjustments' => [
+                ['label' => 'Adjustments', 'value' => $count, 'tone' => 'blue', 'icon' => 'AD'],
+                ['label' => 'Qty Adjusted', 'value' => $records->sum(fn (DashboardRecord $record): int => (int) $record->quantity), 'tone' => 'green', 'icon' => 'QY'],
+                ['label' => 'Reasons', 'value' => $records->whereNotNull('adjustment_reason')->count(), 'tone' => 'amber', 'icon' => 'RS'],
+                ['label' => 'Active Records', 'value' => $records->where('is_active', true)->count(), 'tone' => 'violet', 'icon' => 'AC'],
+            ],
+            'low-stock-alerts' => [
+                ['label' => 'Alerts', 'value' => $count, 'tone' => 'blue', 'icon' => 'LA'],
+                ['label' => 'Triggered', 'value' => $records->filter(fn (DashboardRecord $record): bool => $record->alert_threshold !== null && (int) $record->quantity <= (int) $record->alert_threshold)->count(), 'tone' => 'green', 'icon' => 'TR'],
+                ['label' => 'Reorder Qty', 'value' => $records->sum(fn (DashboardRecord $record): int => (int) $record->suggested_reorder_quantity), 'tone' => 'amber', 'icon' => 'RQ'],
+                ['label' => 'Critical Items', 'value' => $records->filter(fn (DashboardRecord $record): bool => $record->alert_threshold !== null && (int) $record->quantity === 0)->count(), 'tone' => 'violet', 'icon' => 'CR'],
+            ],
+            'reports-analytics' => [
+                ['label' => 'Reports', 'value' => $count, 'tone' => 'blue', 'icon' => 'RP'],
+                ['label' => 'Inventory Value', 'value' => 'Rs. ' . number_format($this->inventoryValue(), 2), 'tone' => 'green', 'icon' => 'IV'],
+                ['label' => 'Movements', 'value' => $this->inventoryRecordsQuery('stock-in')->count() + $this->inventoryRecordsQuery('stock-out')->count() + $this->inventoryRecordsQuery('inventory-transfers')->count() + $this->inventoryRecordsQuery('stock-adjustments')->count(), 'tone' => 'amber', 'icon' => 'MV'],
+                ['label' => 'Active Items', 'value' => $this->inventoryRecordsQuery('product-registration')->where('is_active', true)->count(), 'tone' => 'violet', 'icon' => 'AI'],
+            ],
+            default => [
+                ['label' => 'Records', 'value' => $count, 'tone' => 'blue', 'icon' => 'IN'],
+                ['label' => 'Active', 'value' => $records->where('is_active', true)->count(), 'tone' => 'green', 'icon' => 'AC'],
+                ['label' => 'Archived', 'value' => $records->where('is_active', false)->count(), 'tone' => 'amber', 'icon' => 'AR'],
+            ],
+        };
+    }
+
+    private function inventoryCalculation(string $type): string
+    {
+        return match ($type) {
+            'product-registration' => 'Inventory value = quantity x cost price for each product record.',
+            'stock-in' => 'Receipt value = quantity x cost price for each incoming stock record.',
+            'stock-out' => 'Sales value = quantity x selling price for each outgoing stock record.',
+            'real-time-tracking' => 'Available stock = quantity - reserved quantity - damaged quantity.',
+            'barcode-qr-support' => 'Coverage is calculated from records that already have SKU or barcode values.',
+            'supplier-management' => 'Supplier and contact totals are calculated from supplier records on this page.',
+            'customer-management' => 'Customer and sales totals are calculated from customer records on this page.',
+            'purchase-management' => 'Purchase value = quantity x cost price for each purchase record.',
+            'sales-management' => 'Net sales value = quantity x selling price minus any recorded refunds.',
+            'inventory-transfers' => 'Transfer totals are calculated from quantity and transfer status on each transfer record.',
+            'stock-adjustments' => 'Adjustment totals are calculated from quantity and recorded adjustment reasons.',
+            'low-stock-alerts' => 'Low stock alerts are triggered when quantity is at or below the alert threshold.',
+            'reports-analytics' => 'Reporting totals are calculated from the underlying product, movement, and alert records.',
+            default => 'Current values are calculated from the active inventory records on this page.',
+        };
+    }
+
+    private function inventoryValue(): float
+    {
+        $products = $this->inventoryRecordsQuery('product-registration')->get();
+
+        if ($products->isNotEmpty()) {
+            return $products->sum(fn (DashboardRecord $record): float => (float) $record->cost_price * (int) $record->quantity);
+        }
+
+        return (float) Garment::query()->get()->sum(fn (Garment $garment): float => (float) $garment->price * (int) $garment->stock);
+    }
+
+    private function inventoryRecordsQuery(?string $type = null): Builder
+    {
+        return DashboardRecord::query()
+            ->where('section', 'inventory')
+            ->when($type !== null, fn (Builder $query) => $query->where('record_type', $type))
+            ->latest();
     }
 
     private function inventoryPages(): array
     {
         return [
-            'sales-process' => [
-                'title' => 'Sales Process',
-                'subtitle' => 'Order capture through billing and stock reduction.',
-                'banner' => 'A controlled sales flow keeps finance, warehouse, and dispatch aligned from the first customer order.',
+            'product-registration' => [
+                'title' => 'Product Registration',
+                'subtitle' => 'Add products with structured item master data.',
+                'crudType' => 'product-registration',
+                'banner' => 'Each product should have a unique identity with SKU or barcode, category, supplier, pricing, and unit of measure.',
                 'focus' => [
-                    'Customer Order intake',
-                    'Sales Order confirmation',
-                    'Picking and packing handoff',
-                    'Delivery and invoice closure',
+                    'Assign a unique SKU or barcode',
+                    'Store product name and category',
+                    'Link supplier details',
+                    'Capture cost price, selling price, and unit',
                 ],
                 'actions' => [
                     'Back to Inventory Overview' => route('dashboard.section', 'inventory'),
-                    'Open Sales Orders' => route('dashboard.section', 'sales-orders'),
+                    'Open Stock In' => route('dashboard.inventory.page', 'stock-in'),
                 ],
             ],
-            'monitoring' => [
-                'title' => 'Inventory Monitoring',
-                'subtitle' => 'Continuously track stock states across the warehouse.',
-                'banner' => 'Live inventory visibility helps the team react before stockouts, damages, or expiry issues hit operations.',
+            'stock-in' => [
+                'title' => 'Stock In',
+                'subtitle' => 'Receive and record inventory from suppliers.',
+                'crudType' => 'stock-in',
+                'banner' => 'Inbound inventory updates stock automatically and keeps purchase paperwork attached to the receipt flow.',
                 'focus' => [
-                    'Current stock',
-                    'Reserved stock',
-                    'Available stock',
-                    'Damaged stock',
-                    'Expired stock',
-                    'Returned items',
+                    'Record supplier receipts',
+                    'Save purchase details and invoices',
+                    'Increase stock quantity automatically',
+                    'Keep receipt history for audits',
                 ],
                 'actions' => [
                     'Back to Inventory Overview' => route('dashboard.section', 'inventory'),
-                    'Open Stock Movements' => route('dashboard.section', 'stock-movements'),
+                    'Open Purchase Management' => route('dashboard.inventory.page', 'purchase-management'),
                 ],
             ],
-            'reorder' => [
-                'title' => 'Reorder Management',
-                'subtitle' => 'Automate low-stock response and purchasing follow-up.',
-                'banner' => 'Minimum-level monitoring can trigger the next procurement action without waiting for manual escalation.',
+            'stock-out' => [
+                'title' => 'Stock Out',
+                'subtitle' => 'Issue stock for sales, dispatch, or internal use.',
+                'crudType' => 'stock-out',
+                'banner' => 'Outward stock transactions should capture the customer or issuing department and prevent negative inventory when required.',
                 'focus' => [
-                    'Low stock notification',
-                    'Purchase request generation',
-                    'Purchase order creation',
+                    'Deduct stock on sale or issue',
+                    'Record customer and sales details',
+                    'Prevent negative stock if desired',
+                    'Track issue history and reference numbers',
                 ],
                 'actions' => [
                     'Back to Inventory Overview' => route('dashboard.section', 'inventory'),
-                    'Open Procurement' => route('dashboard.section', 'procurement'),
+                    'Open Sales Management' => route('dashboard.inventory.page', 'sales-management'),
                 ],
             ],
-            'reports' => [
-                'title' => 'Reporting',
-                'subtitle' => 'Management reporting across stock, purchasing, sales, and warehouse activity.',
-                'banner' => 'The reporting layer gives decision-makers a single place to review performance, value, and movement trends.',
+            'real-time-tracking' => [
+                'title' => 'Real-Time Stock Tracking',
+                'subtitle' => 'See live inventory levels as transactions occur.',
+                'crudType' => 'real-time-tracking',
+                'banner' => 'The stock dashboard should instantly reflect available, reserved, damaged, and in-transit quantities across the business.',
                 'focus' => [
-                    'Stock Summary',
-                    'Stock Movement',
-                    'Purchase Report',
-                    'Sales Report',
-                    'Warehouse Report',
-                    'Expiry Report',
-                    'Inventory Valuation',
-                    'Fast-moving items',
-                    'Slow-moving items',
+                    'Show current inventory levels',
+                    'Display available and reserved stock',
+                    'Track damaged stock separately',
+                    'Update instantly after every transaction',
                 ],
                 'actions' => [
                     'Back to Inventory Overview' => route('dashboard.section', 'inventory'),
-                    'Open Reports Section' => route('dashboard.section', 'reports'),
+                    'Open Stock Adjustments' => route('dashboard.inventory.page', 'stock-adjustments'),
+                ],
+            ],
+            'barcode-qr-support' => [
+                'title' => 'Barcode / QR Support',
+                'subtitle' => 'Speed up entry with scanner friendly workflows.',
+                'crudType' => 'barcode-qr-support',
+                'banner' => 'Barcode and QR support reduces typing mistakes and makes receiving, issuing, and stock checks much faster.',
+                'focus' => [
+                    'Scan items for faster entry',
+                    'Reduce manual errors',
+                    'Accelerate receiving and sales processes',
+                    'Support barcode or QR labels',
+                ],
+                'actions' => [
+                    'Back to Inventory Overview' => route('dashboard.section', 'inventory'),
+                    'Open Product Registration' => route('dashboard.inventory.page', 'product-registration'),
+                ],
+            ],
+            'supplier-management' => [
+                'title' => 'Supplier Management',
+                'subtitle' => 'Manage vendors and supply-side performance.',
+                'crudType' => 'supplier-management',
+                'banner' => 'Supplier records should include contact details, purchase history, and service reliability for procurement decisions.',
+                'focus' => [
+                    'Store supplier information',
+                    'Track purchase history',
+                    'Manage contact details',
+                    'Monitor supplier reliability',
+                ],
+                'actions' => [
+                    'Back to Inventory Overview' => route('dashboard.section', 'inventory'),
+                    'Open Purchase Management' => route('dashboard.inventory.page', 'purchase-management'),
+                ],
+            ],
+            'customer-management' => [
+                'title' => 'Customer Management',
+                'subtitle' => 'Keep customer records connected to sales activity.',
+                'crudType' => 'customer-management',
+                'banner' => 'Customer profiles help the sales team track purchase history and manage credit sales where needed.',
+                'focus' => [
+                    'Maintain customer records',
+                    'Track purchase history',
+                    'Support credit sales if applicable',
+                    'Link sales to customer accounts',
+                ],
+                'actions' => [
+                    'Back to Inventory Overview' => route('dashboard.section', 'inventory'),
+                    'Open Sales Management' => route('dashboard.inventory.page', 'sales-management'),
+                ],
+            ],
+            'purchase-management' => [
+                'title' => 'Purchase Management',
+                'subtitle' => 'Plan, approve, and receive purchase orders.',
+                'crudType' => 'purchase-management',
+                'banner' => 'Purchase workflows should move from requisition to order to receipt while automatically increasing stock on confirmation.',
+                'focus' => [
+                    'Create purchase orders',
+                    'Track pending and completed orders',
+                    'Increase stock upon receipt',
+                    'Keep invoices and order references together',
+                ],
+                'actions' => [
+                    'Back to Inventory Overview' => route('dashboard.section', 'inventory'),
+                    'Open Stock In' => route('dashboard.inventory.page', 'stock-in'),
+                ],
+            ],
+            'sales-management' => [
+                'title' => 'Sales Management',
+                'subtitle' => 'Handle invoices, returns, and inventory reduction.',
+                'crudType' => 'sales-management',
+                'banner' => 'Sales transactions should generate invoices, handle refunds, and reduce inventory automatically after completion.',
+                'focus' => [
+                    'Generate sales invoices',
+                    'Process returns and refunds',
+                    'Automatically reduce stock after sales',
+                    'Record customer details with each sale',
+                ],
+                'actions' => [
+                    'Back to Inventory Overview' => route('dashboard.section', 'inventory'),
+                    'Open Customer Management' => route('dashboard.inventory.page', 'customer-management'),
+                ],
+            ],
+            'inventory-transfers' => [
+                'title' => 'Inventory Transfers',
+                'subtitle' => 'Move stock between locations with traceability.',
+                'crudType' => 'inventory-transfers',
+                'banner' => 'Transfers should keep warehouses or branches in sync so each location shows accurate on-hand quantities.',
+                'focus' => [
+                    'Move products between warehouses or branches',
+                    'Track transfer status',
+                    'Update both source and destination inventory',
+                    'Keep transfer history for audit trails',
+                ],
+                'actions' => [
+                    'Back to Inventory Overview' => route('dashboard.section', 'inventory'),
+                    'Open Real-Time Tracking' => route('dashboard.inventory.page', 'real-time-tracking'),
+                ],
+            ],
+            'stock-adjustments' => [
+                'title' => 'Stock Adjustments',
+                'subtitle' => 'Correct stock after physical verification.',
+                'crudType' => 'stock-adjustments',
+                'banner' => 'Adjustment records explain why stock changed so damage, theft, expiry, and count errors stay visible and controlled.',
+                'focus' => [
+                    'Correct inventory after physical counts',
+                    'Record damage, theft, or expiry',
+                    'Capture counting error explanations',
+                    'Keep adjustment history for audits',
+                ],
+                'actions' => [
+                    'Back to Inventory Overview' => route('dashboard.section', 'inventory'),
+                    'Open Low Stock Alerts' => route('dashboard.inventory.page', 'low-stock-alerts'),
+                ],
+            ],
+            'low-stock-alerts' => [
+                'title' => 'Low Stock Alerts',
+                'subtitle' => 'Warn the team before stockouts happen.',
+                'crudType' => 'low-stock-alerts',
+                'banner' => 'Minimum stock thresholds help prevent shortages and can be paired with reorder quantity suggestions.',
+                'focus' => [
+                    'Notify users when stock is low',
+                    'Prevent stock shortages',
+                    'Suggest reorder quantities',
+                    'Highlight critical items early',
+                ],
+                'actions' => [
+                    'Back to Inventory Overview' => route('dashboard.section', 'inventory'),
+                    'Open Purchase Management' => route('dashboard.inventory.page', 'purchase-management'),
+                ],
+            ],
+            'reports-analytics' => [
+                'title' => 'Reports & Analytics',
+                'subtitle' => 'Analyze inventory performance from multiple angles.',
+                'crudType' => 'reports-analytics',
+                'banner' => 'The reporting layer should support operational, financial, and movement analysis for faster decisions.',
+                'focus' => [
+                    'Current stock report',
+                    'Sales report',
+                    'Purchase report',
+                    'Profit and loss report',
+                    'Inventory valuation',
+                    'Fast-moving and slow-moving items',
+                    'Expired products',
+                    'Stock adjustment history',
+                ],
+                'actions' => [
+                    'Back to Inventory Overview' => route('dashboard.section', 'inventory'),
+                    'Open Real-Time Tracking' => route('dashboard.inventory.page', 'real-time-tracking'),
+                    'Open Inventory CRUD' => route('admin.inventory-records.index'),
                 ],
             ],
         ];

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\DashboardRecord;
 use App\Models\Garment;
 use Carbon\Carbon;
 use Illuminate\View\View;
@@ -12,6 +13,7 @@ class AdminDashboardController extends Controller
     {
         $garments = Garment::query()->latest()->get();
         $inventoryValue = $garments->sum(fn (Garment $garment): float => (float) $garment->price * (int) $garment->stock);
+        $inventoryRecords = DashboardRecord::query()->where('section', 'inventory');
 
         return view('admin.dashboard', [
             'sidebarSection' => 'dashboard',
@@ -32,6 +34,56 @@ class AdminDashboardController extends Controller
             'orderStatusLabels' => ['In Production', 'Pending', 'Completed', 'Draft'],
             'orderStatusValues' => [3, 3, 0, 1],
             'latestGarments' => $garments->take(5),
+            'inventoryFeatures' => [
+                [
+                    'title' => 'Product Registration',
+                    'description' => 'Add products, assign SKU/barcode, and store category, supplier, pricing, and unit details.',
+                    'link' => route('admin.inventory-records.index', ['type' => 'product-registration']),
+                    'count' => $inventoryRecords->clone()->where('record_type', 'product-registration')->count(),
+                ],
+                [
+                    'title' => 'Stock In',
+                    'description' => 'Receive supplier inventory, save invoices, and increase stock automatically.',
+                    'link' => route('admin.inventory-records.index', ['type' => 'stock-in']),
+                    'count' => $inventoryRecords->clone()->where('record_type', 'stock-in')->count(),
+                ],
+                [
+                    'title' => 'Stock Out',
+                    'description' => 'Issue inventory for sales or internal use while preventing negative stock if needed.',
+                    'link' => route('admin.inventory-records.index', ['type' => 'stock-out']),
+                    'count' => $inventoryRecords->clone()->where('record_type', 'stock-out')->count(),
+                ],
+                [
+                    'title' => 'Real-Time Tracking',
+                    'description' => 'Track available, reserved, and damaged quantities with instant stock visibility.',
+                    'link' => route('admin.inventory-records.index', ['type' => 'real-time-tracking']),
+                    'count' => $inventoryRecords->clone()->where('record_type', 'real-time-tracking')->count(),
+                ],
+                [
+                    'title' => 'Barcode / QR Support',
+                    'description' => 'Use scanner-friendly entry to reduce manual errors and speed up operations.',
+                    'link' => route('admin.inventory-records.index', ['type' => 'barcode-qr-support']),
+                    'count' => $inventoryRecords->clone()->where('record_type', 'barcode-qr-support')->count(),
+                ],
+                [
+                    'title' => 'Supplier & Customer Management',
+                    'description' => 'Maintain parties, contacts, histories, and purchase or sales records.',
+                    'link' => route('admin.inventory-records.index', ['type' => 'supplier-management']),
+                    'count' => $inventoryRecords->clone()->whereIn('record_type', ['supplier-management', 'customer-management'])->count(),
+                ],
+                [
+                    'title' => 'Purchases, Sales, Transfers',
+                    'description' => 'Manage purchase orders, invoices, returns, refunds, and warehouse transfers.',
+                    'link' => route('admin.inventory-records.index', ['type' => 'purchase-management']),
+                    'count' => $inventoryRecords->clone()->whereIn('record_type', ['purchase-management', 'sales-management', 'inventory-transfers'])->count(),
+                ],
+                [
+                    'title' => 'Adjustments, Alerts, Reports',
+                    'description' => 'Fix stock after counts, trigger low-stock alerts, and review analytics.',
+                    'link' => route('admin.inventory-records.index', ['type' => 'stock-adjustments']),
+                    'count' => $inventoryRecords->clone()->whereIn('record_type', ['stock-adjustments', 'low-stock-alerts', 'reports-analytics'])->count(),
+                ],
+            ],
             'recentActivity' => [
                 ['title' => 'New order batch received', 'meta' => '14 mins ago'],
                 ['title' => 'Quality review completed', 'meta' => '52 mins ago'],

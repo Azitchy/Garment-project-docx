@@ -5,6 +5,7 @@ use App\Http\Controllers\Admin\GarmentController;
 use App\Http\Controllers\AdminUserController;
 use App\Http\Controllers\AdminDashboardController;
 use App\Http\Controllers\AdminSectionController;
+use App\Http\Controllers\Admin\InventoryRecordController;
 use App\Http\Controllers\HomeController;
 use Illuminate\Support\Facades\Route;
 
@@ -26,7 +27,7 @@ Route::middleware('auth')->group(function (): void {
     Route::put('/dashboard/{section}/{record}', [AdminSectionController::class, 'update'])->name('dashboard.section.update');
     Route::delete('/dashboard/{section}/{record}', [AdminSectionController::class, 'destroy'])->name('dashboard.section.destroy');
     Route::get('/dashboard/inventory/{page}', [AdminSectionController::class, 'inventoryPage'])
-        ->whereIn('page', ['sales-process', 'monitoring', 'reorder', 'reports'])
+        ->whereIn('page', ['product-registration', 'stock-in', 'stock-out', 'real-time-tracking', 'barcode-qr-support', 'supplier-management', 'customer-management', 'purchase-management', 'sales-management', 'inventory-transfers', 'stock-adjustments', 'low-stock-alerts', 'reports-analytics'])
         ->name('dashboard.inventory.page');
     Route::get('/dashboard/hr-payroll/{page}', [AdminSectionController::class, 'hrPayrollPage'])
         ->whereIn('page', ['employee-management', 'attendance', 'payroll', 'leave-management', 'performance'])
@@ -43,6 +44,7 @@ Route::middleware('auth')->group(function (): void {
     Route::get('/dashboard/{section}', [AdminSectionController::class, 'show'])->name('dashboard.section');
 
     Route::prefix('admin')->name('admin.')->group(function (): void {
+        Route::resource('inventory-records', InventoryRecordController::class)->except(['show']);
         Route::resource('garments', GarmentController::class)->except(['show']);
         Route::resource('users', AdminUserController::class)->except(['show']);
     });

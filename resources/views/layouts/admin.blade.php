@@ -364,37 +364,252 @@
 
         .auth-panel {
             margin: 0 auto;
-            width: min(460px, calc(100% - 24px));
+            width: min(1280px, calc(100% - 24px));
         }
 
         .login-shell {
             min-height: 100vh;
             display: grid;
             place-items: center;
-            background: linear-gradient(180deg, #eff6ff 0%, #f8fafc 100%);
+            padding: 24px;
+            background:
+                radial-gradient(circle at 18% 14%, rgba(255, 255, 255, 0.45), transparent 18%),
+                radial-gradient(circle at 82% 16%, rgba(255, 255, 255, 0.28), transparent 22%),
+                radial-gradient(circle at 24% 82%, rgba(255, 255, 255, 0.18), transparent 24%),
+                linear-gradient(180deg, #9ed0ff 0%, #86c0f7 46%, #66aef1 100%);
+            overflow: hidden;
+        }
+
+        .login-shell::before,
+        .login-shell::after {
+            content: "";
+            position: fixed;
+            inset: auto;
+            pointer-events: none;
+            border-radius: 50%;
+            filter: blur(0);
+        }
+
+        .login-shell::before {
+            width: 420px;
+            height: 420px;
+            right: -120px;
+            top: -110px;
+            background: rgba(255, 255, 255, 0.16);
+        }
+
+        .login-shell::after {
+            width: 560px;
+            height: 560px;
+            left: -180px;
+            bottom: -190px;
+            background: rgba(255, 255, 255, 0.12);
+        }
+
+        .login-panel {
+            width: min(1500px, 100%);
+            min-height: 820px;
+            border-radius: 34px;
+            background:
+                radial-gradient(circle at 55% 20%, rgba(55, 171, 255, 0.22), transparent 16%),
+                radial-gradient(circle at 78% 70%, rgba(0, 58, 126, 0.22), transparent 14%),
+                linear-gradient(180deg, #0d5ea3 0%, #0b68bd 55%, #0a58a8 100%);
+            box-shadow:
+                0 32px 70px rgba(32, 92, 153, 0.32),
+                inset 0 1px 0 rgba(255, 255, 255, 0.08);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .login-panel::before,
+        .login-panel::after {
+            content: "";
+            position: absolute;
+            border-radius: 50%;
+            pointer-events: none;
+        }
+
+        .login-panel::before {
+            width: 920px;
+            height: 920px;
+            right: -240px;
+            top: -160px;
+            background:
+                radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.18) 0 28%, transparent 29% 100%);
+            opacity: 0.65;
+        }
+
+        .login-panel::after {
+            width: 780px;
+            height: 780px;
+            left: -360px;
+            bottom: -420px;
+            background: rgba(29, 126, 218, 0.28);
+        }
+
+        .login-scene {
+            position: absolute;
+            inset: 0;
+            background:
+                radial-gradient(circle at 38% 20%, rgba(255, 255, 255, 0.16), transparent 5%),
+                radial-gradient(circle at 22% 58%, rgba(255, 255, 255, 0.14), transparent 4%),
+                radial-gradient(circle at 68% 72%, rgba(255, 255, 255, 0.18), transparent 6%),
+                radial-gradient(circle at 78% 84%, rgba(255, 255, 255, 0.16), transparent 5%),
+                linear-gradient(140deg, rgba(4, 51, 106, 0.45), rgba(12, 130, 255, 0.18));
+            opacity: 0.65;
+            mix-blend-mode: screen;
+        }
+
+        .login-stage {
+            position: relative;
+            z-index: 1;
+            min-height: inherit;
+            display: grid;
+            place-items: center;
+            padding: 68px 34px;
         }
 
         .login-card {
-            width: 100%;
-            background: white;
-            border: 1px solid var(--line);
-            border-radius: 24px;
-            box-shadow: var(--shadow);
-            padding: 28px;
+            width: min(470px, 100%);
+            background: rgba(78, 154, 230, 0.34);
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            border-radius: 28px;
+            box-shadow:
+                0 20px 40px rgba(0, 34, 92, 0.18),
+                inset 0 1px 0 rgba(255, 255, 255, 0.12);
+            padding: 34px 36px 30px;
+            backdrop-filter: blur(12px);
+            color: white;
+        }
+
+        .login-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+
+        .login-brand-mark {
+            width: 34px;
+            height: 34px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #4b79ff, #2c7bff);
+            color: white;
+            display: grid;
+            place-items: center;
+            font-weight: 800;
+            font-size: .95rem;
+            box-shadow: 0 10px 20px rgba(37, 99, 235, 0.25);
+        }
+
+        .login-brand strong {
+            display: block;
+            font-size: 1rem;
+            color: white;
+        }
+
+        .login-brand small {
+            color: rgba(255, 255, 255, 0.78);
+        }
+
+        .login-card h1 {
+            margin: 8px 0 12px;
+            font-size: clamp(2rem, 4vw, 2.55rem);
+            line-height: 1.05;
+            font-weight: 800;
+            color: white;
+        }
+
+        .login-card p {
+            margin: 0;
+            color: rgba(255, 255, 255, 0.84);
+        }
+
+        .login-note {
+            margin: 16px 0 20px;
+            padding: 14px 16px;
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.12);
+            border: 1px solid rgba(170, 208, 255, 0.5);
+            color: #dfefff;
+            line-height: 1.5;
         }
 
         .field {
             display: grid;
             gap: 8px;
-            margin-top: 16px;
+            margin-top: 12px;
+        }
+
+        .field label {
+            font-weight: 500;
+            color: rgba(255, 255, 255, 0.94);
         }
 
         .field input,
-        .field textarea {
-            border: 1px solid var(--line);
-            background: #f8fafc;
+        .field textarea,
+        .field select {
+            border: 0;
+            background: rgba(248, 250, 252, 0.95);
+            color: #0f172a;
             padding: 14px 16px;
-            border-radius: 14px;
+            border-radius: 12px;
+            box-shadow: inset 0 0 0 1px rgba(191, 219, 254, 0.75);
+        }
+
+        .field input::placeholder {
+            color: #94a3b8;
+        }
+
+        .field input:focus {
+            outline: 2px solid rgba(147, 197, 253, 0.95);
+            outline-offset: 1px;
+        }
+
+        .form-actions {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-top: 14px;
+            color: rgba(255, 255, 255, 0.86);
+            font-size: .95rem;
+        }
+
+        .form-actions a {
+            color: white;
+            text-decoration: none;
+        }
+
+        .login-footer-link {
+            margin-top: 18px;
+            text-align: center;
+            color: rgba(255, 255, 255, 0.92);
+        }
+
+        .login-footer-link a {
+            font-weight: 700;
+            color: white;
+        }
+
+        .social-row {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            margin-top: 18px;
+        }
+
+        .social-btn {
+            width: 112px;
+            height: 38px;
+            border-radius: 8px;
+            border: 0;
+            background: white;
+            color: #1d4ed8;
+            display: grid;
+            place-items: center;
+            font-weight: 800;
+            box-shadow: 0 8px 18px rgba(14, 79, 156, 0.18);
         }
 
         .button {
@@ -417,14 +632,6 @@
 
         .error { color: #dc2626; font-size: .92rem; }
 
-        .form-actions {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            margin-top: 18px;
-        }
-
         @media (max-width: 1100px) {
             .app { grid-template-columns: 1fr; height: auto; overflow: visible; }
             .sidebar { display: none; }
@@ -438,6 +645,15 @@
             .content { padding-left: 0; padding-right: 0; }
             .grid-cards, .content-grid { grid-template-columns: 1fr; }
             .page-head { flex-direction: column; align-items: flex-start; }
+        }
+
+        @media (max-width: 680px) {
+            .login-shell { padding: 14px; }
+            .login-panel { min-height: auto; border-radius: 24px; }
+            .login-stage { padding: 20px 14px; }
+            .login-card { padding: 26px 18px 22px; }
+            .social-row { gap: 10px; }
+            .social-btn { width: 94px; }
         }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
@@ -498,8 +714,11 @@
 
         <main class="main">
             @if (request()->routeIs('login'))
-                <div class="auth-panel">
-                    @yield('content')
+                <div class="login-panel">
+                    <div class="login-scene"></div>
+                    <div class="login-stage">
+                        @yield('content')
+                    </div>
                 </div>
             @else
                 <div class="topbar">
