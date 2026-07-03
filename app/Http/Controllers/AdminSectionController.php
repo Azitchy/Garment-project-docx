@@ -110,6 +110,7 @@ class AdminSectionController extends Controller
     {
         $pages = $this->financePages();
         abort_unless(array_key_exists($page, $pages), 404);
+        $pageMeta = $pages[$page];
 
         return view('admin.finance-page', [
             'sidebarSection' => 'finance',
@@ -117,14 +118,15 @@ class AdminSectionController extends Controller
             'sectionKey' => 'finance',
             'sectionMeta' => self::sections()['finance'],
             'pageKey' => $page,
-            'pageMeta' => $pages[$page],
+            'pageMeta' => $pageMeta,
             'highlights' => $this->buildHighlights('finance'),
             'financeOverview' => $this->financeOverview(),
-            'records' => DashboardRecord::query()
-                ->where('section', 'finance')
-                ->latest()
-                ->paginate(10)
-                ->withQueryString(),
+            'financeMetrics' => $this->financeMetrics($page),
+            'financeCalculation' => $this->financeCalculation($page),
+            'fieldLabels' => $this->financeFieldLabels($page),
+            'fieldOptions' => $this->financeFieldOptions($page),
+            'records' => $this->safeFinancePaginator($page, 10),
+            'recordType' => $page,
         ]);
     }
 
@@ -417,10 +419,10 @@ class AdminSectionController extends Controller
                 'icon' => 'OR',
                 'children' => [
                     'orders' => ['label' => 'Orders Overview', 'route' => ['dashboard.section', ['orders']]],
-                    'sales-order-workflow' => ['label' => 'Sales Order Workflow', 'route' => ['dashboard.orders.page', ['sales-order-workflow']]],
-                    'order-fulfillment' => ['label' => 'Order Fulfillment', 'route' => ['dashboard.orders.page', ['order-fulfillment']]],
-                    'sample-workflow' => ['label' => 'Sample Workflow', 'route' => ['dashboard.orders.page', ['sample-workflow']]],
-                    'reports' => ['label' => 'Order Reports', 'route' => ['dashboard.orders.page', ['reports']]],
+                    // 'sales-order-workflow' => ['label' => 'Sales Order Workflow', 'route' => ['dashboard.orders.page', ['sales-order-workflow']]],
+                    // 'order-fulfillment' => ['label' => 'Order Fulfillment', 'route' => ['dashboard.orders.page', ['order-fulfillment']]],
+                    // 'sample-workflow' => ['label' => 'Sample Workflow', 'route' => ['dashboard.orders.page', ['sample-workflow']]],
+                    // 'reports' => ['label' => 'Order Reports', 'route' => ['dashboard.orders.page', ['reports']]],
                     'sales-orders' => ['label' => 'Sales Orders', 'route' => ['dashboard.section', ['sales-orders']]],
                     'samples' => ['label' => 'Samples', 'route' => ['dashboard.section', ['samples']]],
                 ],
@@ -486,7 +488,7 @@ class AdminSectionController extends Controller
                 ],
             ],
             'shipments' => ['label' => 'Shipments', 'icon' => 'SH'],
-            'reports' => ['label' => 'Reports', 'icon' => 'RP'],
+            // 'reports' => ['label' => 'Reports', 'icon' => 'RP'],
             'permissions' => [
                 'label' => 'Permissions',
                 'icon' => 'PM',
@@ -564,9 +566,9 @@ class AdminSectionController extends Controller
                 ['label' => 'Payroll Due', 'value' => 'Rs. ' . number_format($this->sumMoneyValues($this->safeHrPayrollCollection('payroll')), 2)],
             ],
             'finance' => [
-                ['label' => 'Cash Balance', 'value' => '$124,800.00', 'tone' => 'green', 'icon' => 'CB'],
-                ['label' => 'Receivables', 'value' => '$38,420.00', 'tone' => 'blue', 'icon' => 'AR'],
-                ['label' => 'Payables', 'value' => '$22,150.00', 'tone' => 'amber', 'icon' => 'AP'],
+                ['label' => 'Cash Balance', 'value' => 'Rs. ' . number_format($this->sumMoneyValues($this->safeFinanceCollection('cash-bank')), 2), 'tone' => 'green', 'icon' => 'CB'],
+                ['label' => 'Receivables', 'value' => 'Rs. ' . number_format($this->sumMoneyValues($this->safeFinanceCollection('receivables')), 2), 'tone' => 'blue', 'icon' => 'AR'],
+                ['label' => 'Payables', 'value' => 'Rs. ' . number_format($this->sumMoneyValues($this->safeFinanceCollection('payables')), 2), 'tone' => 'amber', 'icon' => 'AP'],
             ],
             default => [
                 ['label' => 'Records', 'value' => $this->safeDashboardCount($section)],
@@ -1150,9 +1152,11 @@ class AdminSectionController extends Controller
 
     private function formConfig(string $section, ?string $recordType = null): array
     {
-        $recordTypeOptions = $section === 'hr-payroll'
-            ? array_map(fn (array $page): string => $page['title'], $this->hrPayrollPages())
-            : [];
+        $recordTypeOptions = match ($section) {
+            'hr-payroll' => array_map(fn (array $page): string => $page['title'], $this->hrPayrollPages()),
+            'finance' => array_map(fn (array $page): string => $page['title'], $this->financePages()),
+            default => [],
+        };
 
         return [
             'recordTypeOptions' => $recordTypeOptions,
@@ -1165,6 +1169,10 @@ class AdminSectionController extends Controller
     {
         if ($section === 'hr-payroll') {
             return $this->hrPayrollFieldLabels($recordType);
+        }
+
+        if ($section === 'finance') {
+            return $this->financeFieldLabels($recordType);
         }
 
         return match ($section) {
@@ -1208,6 +1216,7 @@ class AdminSectionController extends Controller
                 'value' => 'Review Value',
                 'employee_id' => 'Employee ID / Code',
             ],
+            'finance' => $this->financeFieldLabels($recordType),
             default => [
                 'title' => 'Title',
                 'meta' => 'Meta',
@@ -1242,6 +1251,7 @@ class AdminSectionController extends Controller
                 'status' => ['Draft' => 'Draft', 'In Progress' => 'In Progress', 'Completed' => 'Completed'],
                 'is_active' => $activeInactive,
             ],
+            'finance' => $this->financeFieldOptions($recordType),
             default => [
                 'status' => [],
                 'is_active' => $activeInactive,
@@ -1336,11 +1346,15 @@ class AdminSectionController extends Controller
 
     private function resolveRecordType(string $section, string $recordType): ?string
     {
-        if ($section !== 'hr-payroll') {
+        if (! in_array($section, ['hr-payroll', 'finance'], true)) {
             return null;
         }
 
         $recordType = trim($recordType);
+
+        if ($section === 'finance') {
+            return array_key_exists($recordType, $this->financePages()) ? $recordType : null;
+        }
 
         return array_key_exists($recordType, $this->hrPayrollPages()) ? $recordType : null;
     }
@@ -1468,6 +1482,11 @@ class AdminSectionController extends Controller
 
     private function financeOverview(): array
     {
+        $incomeTotal = $this->sumMoneyValues($this->safeFinanceCollection('income-management'));
+        $expenseTotal = $this->sumMoneyValues($this->safeFinanceCollection('expense-management'));
+        $receivableTotal = $this->sumMoneyValues($this->safeFinanceCollection('receivables'));
+        $payableTotal = $this->sumMoneyValues($this->safeFinanceCollection('payables'));
+
         return [
             'quickActions' => [
                 ['label' => 'Income Management', 'target' => 'income-management'],
@@ -1476,52 +1495,282 @@ class AdminSectionController extends Controller
                 ['label' => 'Financial Reports', 'target' => 'reports'],
             ],
             'stats' => [
-                ['label' => 'Cash Balance', 'value' => '$124,800.00'],
-                ['label' => 'Receivables', 'value' => '$38,420.00'],
-                ['label' => 'Payables', 'value' => '$22,150.00'],
-                ['label' => 'Monthly Profit', 'value' => '$67,300.00'],
+                ['label' => 'Income Total', 'value' => 'Rs. ' . number_format($incomeTotal, 2)],
+                ['label' => 'Expense Total', 'value' => 'Rs. ' . number_format($expenseTotal, 2)],
+                ['label' => 'Receivables', 'value' => 'Rs. ' . number_format($receivableTotal, 2)],
+                ['label' => 'Payables', 'value' => 'Rs. ' . number_format($payableTotal, 2)],
             ],
-            'sections' => [
-                [
-                    'title' => 'Income Management',
-                    'items' => [
-                        'Record sales or service income',
-                        'Issue invoices to customers',
-                        'Receive cash, bank transfer, or digital payment',
-                        'Update customer balances',
-                    ],
-                ],
-                [
-                    'title' => 'Expense & Purchase Control',
-                    'items' => [
-                        'Record daily business expenses',
-                        'Receive and verify supplier invoices',
-                        'Pay suppliers and update accounts payable',
-                        'Track office, fuel, travel, supplies, and marketing spend',
-                    ],
-                ],
-                [
-                    'title' => 'Cash, Bank, and Reconciliation',
-                    'items' => [
-                        'Record cash received and paid',
-                        'Track bank deposits and withdrawals',
-                        'Monitor daily cash balance',
-                        'Compare cash book and bank statement',
-                    ],
-                ],
-                [
-                    'title' => 'Reporting',
-                    'items' => [
-                        'Profit & Loss Statement',
-                        'Balance Sheet',
-                        'Cash Flow Statement',
-                        'Income & Expense Report',
-                        'Outstanding Receivables Report',
-                        'Outstanding Payables Report',
-                    ],
-                ],
-            ],
+            'summary' => 'Finance records are grouped by submenu and can be created, edited, and removed from each page.',
         ];
+    }
+
+    private function financeMetrics(string $page): array
+    {
+        $records = $this->safeFinanceCollection($page);
+
+        return match ($page) {
+            'income-management' => [
+                ['label' => 'Income Records', 'value' => $records->count(), 'tone' => 'blue', 'icon' => 'IN'],
+                ['label' => 'Collected', 'value' => $records->where('status', 'Paid')->count(), 'tone' => 'green', 'icon' => 'CP'],
+                ['label' => 'Pending', 'value' => $records->whereIn('status', ['Draft', 'Issued', 'Overdue'])->count(), 'tone' => 'amber', 'icon' => 'PD'],
+                ['label' => 'Income Total', 'value' => 'Rs. ' . number_format($this->sumMoneyValues($records), 2), 'tone' => 'violet', 'icon' => 'TL'],
+            ],
+            'expense-management' => [
+                ['label' => 'Expense Records', 'value' => $records->count(), 'tone' => 'blue', 'icon' => 'EX'],
+                ['label' => 'Approved', 'value' => $records->where('status', 'Approved')->count(), 'tone' => 'green', 'icon' => 'AP'],
+                ['label' => 'Pending', 'value' => $records->where('status', 'Draft')->count(), 'tone' => 'amber', 'icon' => 'PD'],
+                ['label' => 'Expense Total', 'value' => 'Rs. ' . number_format($this->sumMoneyValues($records), 2), 'tone' => 'violet', 'icon' => 'TL'],
+            ],
+            'purchase-payments' => [
+                ['label' => 'Bills', 'value' => $records->count(), 'tone' => 'blue', 'icon' => 'PB'],
+                ['label' => 'Paid', 'value' => $records->where('status', 'Paid')->count(), 'tone' => 'green', 'icon' => 'PD'],
+                ['label' => 'Due', 'value' => $records->whereIn('status', ['Pending', 'Partial'])->count(), 'tone' => 'amber', 'icon' => 'DU'],
+                ['label' => 'Payable Total', 'value' => 'Rs. ' . number_format($this->sumMoneyValues($records), 2), 'tone' => 'violet', 'icon' => 'TL'],
+            ],
+            'payroll' => [
+                ['label' => 'Payroll Runs', 'value' => $records->count(), 'tone' => 'blue', 'icon' => 'PY'],
+                ['label' => 'Processing', 'value' => $records->where('status', 'Processing')->count(), 'tone' => 'amber', 'icon' => 'PR'],
+                ['label' => 'Paid', 'value' => $records->where('status', 'Paid')->count(), 'tone' => 'green', 'icon' => 'PD'],
+                ['label' => 'Payroll Total', 'value' => 'Rs. ' . number_format($this->sumMoneyValues($records), 2), 'tone' => 'violet', 'icon' => 'TL'],
+            ],
+            'cash-bank' => [
+                ['label' => 'Entries', 'value' => $records->count(), 'tone' => 'blue', 'icon' => 'CB'],
+                ['label' => 'Open', 'value' => $records->where('status', 'Open')->count(), 'tone' => 'green', 'icon' => 'OP'],
+                ['label' => 'Closed', 'value' => $records->where('status', 'Closed')->count(), 'tone' => 'amber', 'icon' => 'CL'],
+                ['label' => 'Net Cash', 'value' => 'Rs. ' . number_format($this->sumMoneyValues($records), 2), 'tone' => 'violet', 'icon' => 'NC'],
+            ],
+            'receivables' => [
+                ['label' => 'Invoices', 'value' => $records->count(), 'tone' => 'blue', 'icon' => 'AR'],
+                ['label' => 'Paid', 'value' => $records->where('status', 'Paid')->count(), 'tone' => 'green', 'icon' => 'PD'],
+                ['label' => 'Overdue', 'value' => $records->where('status', 'Overdue')->count(), 'tone' => 'amber', 'icon' => 'OD'],
+                ['label' => 'Receivable Total', 'value' => 'Rs. ' . number_format($this->sumMoneyValues($records), 2), 'tone' => 'violet', 'icon' => 'TL'],
+            ],
+            'payables' => [
+                ['label' => 'Bills', 'value' => $records->count(), 'tone' => 'blue', 'icon' => 'AP'],
+                ['label' => 'Paid', 'value' => $records->where('status', 'Paid')->count(), 'tone' => 'green', 'icon' => 'PD'],
+                ['label' => 'Pending', 'value' => $records->whereIn('status', ['Pending', 'Partial'])->count(), 'tone' => 'amber', 'icon' => 'PN'],
+                ['label' => 'Payable Total', 'value' => 'Rs. ' . number_format($this->sumMoneyValues($records), 2), 'tone' => 'violet', 'icon' => 'TL'],
+            ],
+            'reconciliation' => [
+                ['label' => 'Statements', 'value' => $records->count(), 'tone' => 'blue', 'icon' => 'RC'],
+                ['label' => 'Matched', 'value' => $records->where('status', 'Matched')->count(), 'tone' => 'green', 'icon' => 'MT'],
+                ['label' => 'Pending', 'value' => $records->where('status', 'Pending')->count(), 'tone' => 'amber', 'icon' => 'PD'],
+                ['label' => 'Difference', 'value' => 'Rs. ' . number_format($this->sumMoneyValues($records), 2), 'tone' => 'violet', 'icon' => 'DF'],
+            ],
+            'reports' => [
+                ['label' => 'Reports', 'value' => $records->count(), 'tone' => 'blue', 'icon' => 'RP'],
+                ['label' => 'Published', 'value' => $records->where('status', 'Published')->count(), 'tone' => 'green', 'icon' => 'PB'],
+                ['label' => 'Draft', 'value' => $records->where('status', 'Draft')->count(), 'tone' => 'amber', 'icon' => 'DR'],
+                ['label' => 'Reported Value', 'value' => 'Rs. ' . number_format($this->sumMoneyValues($records), 2), 'tone' => 'violet', 'icon' => 'TL'],
+            ],
+            default => [
+                ['label' => 'Records', 'value' => $records->count(), 'tone' => 'blue', 'icon' => 'FN'],
+                ['label' => 'Active', 'value' => $records->where('is_active', true)->count(), 'tone' => 'green', 'icon' => 'AC'],
+                ['label' => 'Inactive', 'value' => $records->where('is_active', false)->count(), 'tone' => 'amber', 'icon' => 'IN'],
+                ['label' => 'Total', 'value' => 'Rs. ' . number_format($this->sumMoneyValues($records), 2), 'tone' => 'violet', 'icon' => 'TL'],
+            ],
+        };
+    }
+
+    private function financeCalculation(string $page): string
+    {
+        return match ($page) {
+            'income-management' => 'Income total = sum of numeric values stored in the Value field for income records.',
+            'expense-management' => 'Expense total = sum of numeric values stored in the Value field for expense records.',
+            'purchase-payments' => 'Payables total = sum of numeric values stored in the Value field for supplier payment records.',
+            'payroll' => 'Payroll total = sum of numeric values stored in the Value field for payroll records.',
+            'cash-bank' => 'Cash and bank totals are calculated from the Value field and transaction date on each entry.',
+            'receivables' => 'Receivable total = sum of numeric values stored in the Value field for customer due records.',
+            'payables' => 'Payables total = sum of numeric values stored in the Value field for supplier due records.',
+            'reconciliation' => 'Reconciliation values are calculated from the value and statement date stored on each record.',
+            'reports' => 'Finance reporting values are calculated from the stored finance records and their numeric amounts.',
+            default => 'Current finance values are calculated from the records stored in this submenu.',
+        };
+    }
+
+    private function financeRecordsQuery(?string $page = null): Builder
+    {
+        $query = DashboardRecord::query()->where('section', 'finance');
+
+        if ($page !== null && $this->hasFinanceTypedRecords($page)) {
+            return $query->where('record_type', $page)->latest();
+        }
+
+        return $query->latest();
+    }
+
+    private function financeFieldLabels(?string $page = null): array
+    {
+        return match ($page) {
+            'income-management' => [
+                'title' => 'Income Title',
+                'meta' => 'Customer / Invoice',
+                'status' => 'Income Status',
+                'value' => 'Income Amount',
+                'customer' => 'Customer Name',
+                'invoice_no' => 'Invoice No.',
+                'transaction_date' => 'Income Date',
+                'due_date' => 'Due Date',
+                'payment_mode' => 'Payment Mode',
+            ],
+            'expense-management' => [
+                'title' => 'Expense Title',
+                'meta' => 'Category / Department',
+                'status' => 'Expense Status',
+                'value' => 'Expense Amount',
+                'transaction_date' => 'Expense Date',
+                'payment_mode' => 'Payment Mode',
+            ],
+            'purchase-payments' => [
+                'title' => 'Purchase Payment Title',
+                'meta' => 'Supplier / Bill No.',
+                'status' => 'Payment Status',
+                'value' => 'Payment Amount',
+                'supplier' => 'Supplier Name',
+                'invoice_no' => 'Bill / Invoice No.',
+                'transaction_date' => 'Payment Date',
+                'due_date' => 'Due Date',
+                'payment_mode' => 'Payment Mode',
+            ],
+            'payroll' => [
+                'title' => 'Payroll Batch Title',
+                'meta' => 'Payroll Month / Department',
+                'status' => 'Payroll Status',
+                'value' => 'Payroll Amount',
+                'employee_id' => 'Employee ID / Code',
+                'employment_type' => 'Employment Type',
+                'transaction_date' => 'Pay Date',
+            ],
+            'cash-bank' => [
+                'title' => 'Cash / Bank Entry',
+                'meta' => 'Account / Mode',
+                'status' => 'Entry Status',
+                'value' => 'Amount',
+                'transaction_date' => 'Transaction Date',
+                'payment_mode' => 'Payment Mode',
+            ],
+            'receivables' => [
+                'title' => 'Receivable Title',
+                'meta' => 'Customer / Invoice',
+                'status' => 'Receivable Status',
+                'value' => 'Outstanding Amount',
+                'customer' => 'Customer Name',
+                'invoice_no' => 'Invoice No.',
+                'transaction_date' => 'Receipt Date',
+                'due_date' => 'Due Date',
+            ],
+            'payables' => [
+                'title' => 'Payable Title',
+                'meta' => 'Supplier / Invoice',
+                'status' => 'Payable Status',
+                'value' => 'Outstanding Amount',
+                'supplier' => 'Supplier Name',
+                'invoice_no' => 'Invoice No.',
+                'transaction_date' => 'Payment Date',
+                'due_date' => 'Due Date',
+            ],
+            'reconciliation' => [
+                'title' => 'Reconciliation Batch',
+                'meta' => 'Bank Account / Statement',
+                'status' => 'Reconciliation Status',
+                'value' => 'Difference Amount',
+                'transaction_date' => 'Statement Date',
+            ],
+            'reports' => [
+                'title' => 'Report Title',
+                'meta' => 'Period / Category',
+                'status' => 'Report Status',
+                'value' => 'Report Value',
+                'transaction_date' => 'Report Date',
+            ],
+            default => [
+                'title' => 'Title',
+                'meta' => 'Meta',
+                'status' => 'Status',
+                'value' => 'Value',
+            ],
+        };
+    }
+
+    private function financeFieldOptions(?string $page = null): array
+    {
+        $activeInactive = ['1' => 'Active', '0' => 'Inactive'];
+
+        return match ($page) {
+            'income-management' => [
+                'status' => ['Draft' => 'Draft', 'Issued' => 'Issued', 'Paid' => 'Paid', 'Overdue' => 'Overdue'],
+                'is_active' => $activeInactive,
+            ],
+            'expense-management' => [
+                'status' => ['Draft' => 'Draft', 'Approved' => 'Approved', 'Paid' => 'Paid'],
+                'is_active' => $activeInactive,
+            ],
+            'purchase-payments' => [
+                'status' => ['Pending' => 'Pending', 'Partial' => 'Partial', 'Paid' => 'Paid'],
+                'is_active' => $activeInactive,
+            ],
+            'payroll' => [
+                'status' => ['Draft' => 'Draft', 'Processing' => 'Processing', 'Paid' => 'Paid'],
+                'is_active' => $activeInactive,
+            ],
+            'cash-bank' => [
+                'status' => ['Open' => 'Open', 'Closed' => 'Closed'],
+                'is_active' => $activeInactive,
+            ],
+            'receivables' => [
+                'status' => ['Pending' => 'Pending', 'Partial' => 'Partial', 'Paid' => 'Paid', 'Overdue' => 'Overdue'],
+                'is_active' => $activeInactive,
+            ],
+            'payables' => [
+                'status' => ['Pending' => 'Pending', 'Partial' => 'Partial', 'Paid' => 'Paid'],
+                'is_active' => $activeInactive,
+            ],
+            'reconciliation' => [
+                'status' => ['Pending' => 'Pending', 'Matched' => 'Matched', 'Adjusted' => 'Adjusted'],
+                'is_active' => $activeInactive,
+            ],
+            'reports' => [
+                'status' => ['Draft' => 'Draft', 'Published' => 'Published', 'Archived' => 'Archived'],
+                'is_active' => $activeInactive,
+            ],
+            default => [
+                'status' => [],
+                'is_active' => $activeInactive,
+            ],
+        };
+    }
+
+    private function hasFinanceTypedRecords(string $page): bool
+    {
+        try {
+            return DashboardRecord::query()
+                ->where('section', 'finance')
+                ->where('record_type', $page)
+                ->exists();
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    private function safeFinanceCollection(?string $page = null)
+    {
+        try {
+            return $this->financeRecordsQuery($page)->get();
+        } catch (Throwable) {
+            return collect();
+        }
+    }
+
+    private function safeFinancePaginator(?string $page = null, int $perPage = 10): LengthAwarePaginator
+    {
+        try {
+            return $this->financeRecordsQuery($page)->paginate($perPage)->withQueryString();
+        } catch (Throwable) {
+            return new LengthAwarePaginator([], 0, $perPage, 1, [
+                'path' => request()->url(),
+                'query' => request()->query(),
+            ]);
+        }
     }
 
     private function masterDataOverview(): array
@@ -1801,6 +2050,8 @@ class AdminSectionController extends Controller
             'status' => ['nullable', 'string', 'max:120'],
             'value' => ['nullable', 'string', 'max:255'],
             'record_type' => ['nullable', 'string', 'max:80'],
+            'customer' => ['nullable', 'string', 'max:255'],
+            'supplier' => ['nullable', 'string', 'max:255'],
             'pan_vat' => ['nullable', 'string', 'max:120'],
             'province' => ['nullable', 'string', 'max:120'],
             'district' => ['nullable', 'string', 'max:120'],
@@ -1827,12 +2078,12 @@ class AdminSectionController extends Controller
             $rules['status'] = ['nullable', 'string', 'max:120', Rule::in(array_keys($fieldOptions['status']))];
         }
 
-        if ($section === 'hr-payroll' && in_array($request->input('record_type'), ['attendance', 'employee-management', 'payroll', 'leave-management', 'performance'], true)) {
+        if ($section === 'hr-payroll') {
             $rules['record_type'] = ['required', 'string', 'max:80', Rule::in(array_keys($this->hrPayrollPages()))];
         }
 
-        if ($section === 'hr-payroll' && ! isset($rules['record_type'])) {
-            $rules['record_type'] = ['required', 'string', 'max:80', Rule::in(array_keys($this->hrPayrollPages()))];
+        if ($section === 'finance') {
+            $rules['record_type'] = ['required', 'string', 'max:80', Rule::in(array_keys($this->financePages()))];
         }
 
         if (! empty($fieldOptions['is_active'])) {

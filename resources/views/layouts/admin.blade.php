@@ -44,8 +44,12 @@
         .app {
             height: 100vh;
             display: grid;
-            grid-template-columns: 280px 1fr;
+            grid-template-columns: 280px minmax(0, 1fr);
             overflow: hidden;
+        }
+
+        .sidebar-backdrop {
+            display: none;
         }
 
         .sidebar {
@@ -176,6 +180,20 @@
             position: sticky;
             top: 0;
             z-index: 20;
+        }
+
+        .sidebar-toggle {
+            display: none;
+            width: 42px;
+            height: 42px;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            background: white;
+            color: #334155;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            flex: 0 0 auto;
         }
 
         .search {
@@ -634,13 +652,41 @@
 
         @media (max-width: 1100px) {
             .app { grid-template-columns: 1fr; height: auto; overflow: visible; }
-            .sidebar { display: none; }
+            .sidebar {
+                display: flex;
+                position: fixed;
+                inset: 0 auto 0 0;
+                width: 290px;
+                max-width: 88vw;
+                z-index: 40;
+                transform: translateX(-100%);
+                transition: transform 0.25s ease;
+                box-shadow: 24px 0 48px rgba(15, 23, 42, 0.25);
+            }
+            body.sidebar-open .sidebar { transform: translateX(0); }
+            .sidebar-backdrop {
+                display: block;
+                position: fixed;
+                inset: 0;
+                background: rgba(15, 23, 42, 0.45);
+                opacity: 0;
+                pointer-events: none;
+                transition: opacity 0.25s ease;
+                z-index: 35;
+            }
+            body.sidebar-open .sidebar-backdrop {
+                opacity: 1;
+                pointer-events: auto;
+            }
+            .sidebar-toggle { display: inline-flex; }
             .main { height: auto; overflow: visible; }
             .grid-cards, .content-grid { grid-template-columns: 1fr 1fr; }
         }
 
         @media (max-width: 768px) {
             .topbar { height: auto; padding: 14px 16px; flex-direction: column; align-items: stretch; }
+            .topbar > div:first-child { width: 100%; }
+            .topbar .search { width: 100%; }
             .search { max-width: none; }
             .content { padding-left: 0; padding-right: 0; }
             .grid-cards, .content-grid { grid-template-columns: 1fr; }
@@ -679,7 +725,7 @@
                         @if (isset($item['children']))
                             @php($groupOpen = (isset($activeSection) && array_key_exists($activeSection, $item['children'])) || (isset($activeSubsection) && array_key_exists($activeSubsection, $item['children'])))
                             <div class="nav-section {{ $groupOpen ? 'open' : '' }}" data-group="{{ $key }}">
-                                <button type="button" class="nav-toggle {{ $groupOpen ? 'active' : '' }}" data-toggle-group="{{ $key }}">
+                                <button type="button" class="nav-toggle {{ $groupOpen ? 'active' : '' }}" data-toggle-group="{{ $key }}" aria-expanded="{{ $groupOpen ? 'true' : 'false' }}">
                                     <span class="nav-left"><span>{{ $item['icon'] }}</span> {{ $item['label'] }}</span>
                                     <span class="caret">▾</span>
                                 </button>
@@ -710,6 +756,7 @@
                     <div class="subtle">{{ $currentUser?->email ?? 'admin#gms.com' }}</div>
                 </div>
             </aside>
+            <div class="sidebar-backdrop" data-sidebar-backdrop></div>
         @endunless
 
         <main class="main">
@@ -723,7 +770,7 @@
             @else
                 <div class="topbar">
                     <div style="display:flex;align-items:center;gap:14px;flex:1;">
-                        <div style="font-size:1.2rem;color:#64748b;">☰</div>
+                        <button type="button" class="sidebar-toggle" data-sidebar-toggle aria-label="Toggle sidebar">☰</button>
                         <div class="search">
                             <span>⌕</span>
                             <input type="search" placeholder="Search orders, products, inventory...">
@@ -757,6 +804,31 @@
     </div>
 
     <script>
+        const sidebar = document.querySelector('.sidebar');
+        const backdrop = document.querySelector('[data-sidebar-backdrop]');
+        const sidebarToggle = document.querySelector('[data-sidebar-toggle]');
+        const mobileQuery = window.matchMedia('(max-width: 1100px)');
+
+        const closeSidebar = () => document.body.classList.remove('sidebar-open');
+
+        if (sidebarToggle) {
+            sidebarToggle.addEventListener('click', () => {
+                document.body.classList.toggle('sidebar-open');
+            });
+        }
+
+        if (backdrop) {
+            backdrop.addEventListener('click', closeSidebar);
+        }
+
+        if (sidebar) {
+            sidebar.querySelectorAll('a.nav-link, a.child-link').forEach((link) => {
+                link.addEventListener('click', () => {
+                    if (mobileQuery.matches) closeSidebar();
+                });
+            });
+        }
+
         document.querySelectorAll('[data-toggle-group]').forEach((button) => {
             button.addEventListener('click', () => {
                 const group = button.closest('.nav-section');
@@ -767,13 +839,21 @@
                     section.classList.remove('open');
                     const toggle = section.querySelector('.nav-toggle');
                     if (toggle) toggle.classList.remove('active');
+                    if (toggle) toggle.setAttribute('aria-expanded', 'false');
                 });
 
                 if (!isOpen) {
                     group.classList.add('open');
                     button.classList.add('active');
+                    button.setAttribute('aria-expanded', 'true');
+                } else {
+                    button.setAttribute('aria-expanded', 'false');
                 }
             });
+        });
+
+        document.querySelectorAll('.nav-section.open .nav-toggle').forEach((button) => {
+            button.setAttribute('aria-expanded', 'true');
         });
     </script>
 </body>

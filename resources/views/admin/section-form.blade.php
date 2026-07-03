@@ -205,6 +205,54 @@
                     </div>
                 @endif
 
+                @if ($sectionKey === 'finance')
+                    <div class="card" style="grid-column:1 / -1;box-shadow:none;background:#f8fafc;">
+                        <div class="section-title">
+                            @php($currentFinanceType = $recordType ?? $record->record_type ?? '')
+                            <h2>{{ $recordTypeOptions[$currentFinanceType] ?? 'Finance Details' }}</h2>
+                            <span class="pill">{{ $currentFinanceType ?: 'Finance record' }}</span>
+                        </div>
+
+                        <div class="content-grid">
+                            <div class="field">
+                                <label for="transaction_date">{{ $fieldLabels['transaction_date'] ?? 'Transaction Date' }}</label>
+                                <input id="transaction_date" type="date" name="transaction_date" value="{{ old('transaction_date', optional($record->transaction_date)->format('Y-m-d')) }}">
+                                @error('transaction_date')<div class="error">{{ $message }}</div>@enderror
+                            </div>
+
+                            <div class="field">
+                                <label for="due_date">{{ $fieldLabels['due_date'] ?? 'Due Date' }}</label>
+                                <input id="due_date" type="date" name="due_date" value="{{ old('due_date', optional($record->due_date)->format('Y-m-d')) }}">
+                                @error('due_date')<div class="error">{{ $message }}</div>@enderror
+                            </div>
+
+                            <div class="field">
+                                <label for="invoice_no">{{ $fieldLabels['invoice_no'] ?? 'Invoice No.' }}</label>
+                                <input id="invoice_no" name="invoice_no" value="{{ old('invoice_no', $record->invoice_no) }}" placeholder="Invoice or bill number">
+                                @error('invoice_no')<div class="error">{{ $message }}</div>@enderror
+                            </div>
+
+                            <div class="field">
+                                <label for="customer">{{ $fieldLabels['customer'] ?? 'Customer Name' }}</label>
+                                <input id="customer" name="customer" value="{{ old('customer', $record->customer) }}" placeholder="Customer name">
+                                @error('customer')<div class="error">{{ $message }}</div>@enderror
+                            </div>
+
+                            <div class="field">
+                                <label for="supplier">{{ $fieldLabels['supplier'] ?? 'Supplier Name' }}</label>
+                                <input id="supplier" name="supplier" value="{{ old('supplier', $record->supplier) }}" placeholder="Supplier name">
+                                @error('supplier')<div class="error">{{ $message }}</div>@enderror
+                            </div>
+
+                            <div class="field">
+                                <label for="payment_mode">{{ $fieldLabels['payment_mode'] ?? 'Payment Mode' }}</label>
+                                <input id="payment_mode" name="payment_mode" value="{{ old('payment_mode', $record->payment_mode) }}" placeholder="Cash, bank transfer, online">
+                                @error('payment_mode')<div class="error">{{ $message }}</div>@enderror
+                            </div>
+                        </div>
+                    </div>
+                @endif
+
                 <div class="field">
                     <label for="notes">Notes</label>
                     <textarea id="notes" name="notes" rows="5">{{ old('notes', $record->notes) }}</textarea>

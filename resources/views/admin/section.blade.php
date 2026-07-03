@@ -148,25 +148,9 @@
                 @endforeach
             </section>
 
-            <div class="content-grid" style="margin-bottom:18px;">
-                @foreach ($financeOverview['sections'] as $block)
-                    <div class="card" style="box-shadow:none;">
-                        <div class="section-title">
-                            <h2>{{ $block['title'] }}</h2>
-                            <span class="pill">Core function</span>
-                        </div>
-                        <div class="list">
-                            @foreach ($block['items'] as $item)
-                                <div class="activity" style="padding:10px 0;">
-                                    <div>
-                                        <strong>{{ $item }}</strong>
-                                    </div>
-                                </div>
-                            @endforeach
-                        </div>
-                    </div>
-                @endforeach
-            </div>
+            @if (!empty($financeOverview['summary']))
+                <p class="subtle" style="margin:0 0 18px;">{{ $financeOverview['summary'] }}</p>
+            @endif
 
             <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:18px;">
                 @foreach ($financeOverview['quickActions'] as $action)
