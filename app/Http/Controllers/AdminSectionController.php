@@ -5,9 +5,12 @@ namespace App\Http\Controllers;
 use App\Models\DashboardRecord;
 use App\Models\Garment;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
+use Throwable;
 
 class AdminSectionController extends Controller
 {
@@ -31,11 +34,7 @@ class AdminSectionController extends Controller
             'sectionKey' => $section,
             'sectionMeta' => $sections[$section],
             'highlights' => $this->buildHighlights($section),
-            'records' => DashboardRecord::query()
-                ->where('section', $section)
-                ->latest()
-                ->paginate(10)
-                ->withQueryString(),
+            'records' => $this->safeSectionPaginator($section, 10),
         ];
 
         if ($section === 'hr-payroll') {
@@ -87,6 +86,8 @@ class AdminSectionController extends Controller
     {
         $pages = $this->hrPayrollPages();
         abort_unless(array_key_exists($page, $pages), 404);
+        $pageMeta = $pages[$page];
+        $records = $this->safeHrPayrollPaginator($page, 10);
 
         return view('admin.hr-payroll-page', [
             'sidebarSection' => 'hr-payroll',
@@ -94,14 +95,14 @@ class AdminSectionController extends Controller
             'sectionKey' => 'hr-payroll',
             'sectionMeta' => self::sections()['hr-payroll'],
             'pageKey' => $page,
-            'pageMeta' => $pages[$page],
+            'pageMeta' => $pageMeta,
             'highlights' => $this->buildHighlights('hr-payroll'),
             'hrPayrollOverview' => $this->hrPayrollOverview(),
-            'records' => DashboardRecord::query()
-                ->where('section', 'hr-payroll')
-                ->latest()
-                ->paginate(10)
-                ->withQueryString(),
+            'hrPayrollMetrics' => $this->hrPayrollMetrics($page),
+            'hrPayrollCalculation' => $this->hrPayrollCalculation($page),
+            'fieldLabels' => $this->hrPayrollFieldLabels($page),
+            'records' => $records,
+            'recordType' => $page,
         ]);
     }
 
@@ -288,15 +289,21 @@ class AdminSectionController extends Controller
         ];
     }
 
-    public function create(string $section): View
+    public function create(Request $request, string $section): View
     {
         $sectionMeta = $this->sectionOrFail($section);
+        $recordType = $this->resolveRecordType($section, $request->string('type')->toString());
+        $formConfig = $this->formConfig($section, $recordType);
 
         return view('admin.section-form', [
             'sidebarSection' => $section,
             'sectionKey' => $section,
             'sectionMeta' => $sectionMeta,
             'record' => new DashboardRecord(['section' => $section]),
+            'recordType' => $recordType,
+            'recordTypeOptions' => $formConfig['recordTypeOptions'],
+            'fieldLabels' => $formConfig['fieldLabels'],
+            'fieldOptions' => $formConfig['fieldOptions'],
             'formMode' => 'create',
         ]);
     }
@@ -305,8 +312,9 @@ class AdminSectionController extends Controller
     {
         $this->sectionOrFail($section);
 
-        $data = $this->validateRecord($request);
+        $data = $this->validateRecord($request, $section);
         $data['section'] = $section;
+        $data['record_type'] = $this->resolveRecordType($section, (string) ($data['record_type'] ?? ''));
 
         DashboardRecord::create($data);
 
@@ -318,12 +326,17 @@ class AdminSectionController extends Controller
     public function edit(string $section, DashboardRecord $record): View
     {
         $this->ensureBelongsToSection($section, $record);
+        $formConfig = $this->formConfig($section, $record->record_type);
 
         return view('admin.section-form', [
             'sidebarSection' => $section,
             'sectionKey' => $section,
             'sectionMeta' => $this->sectionOrFail($section),
             'record' => $record,
+            'recordType' => $record->record_type,
+            'recordTypeOptions' => $formConfig['recordTypeOptions'],
+            'fieldLabels' => $formConfig['fieldLabels'],
+            'fieldOptions' => $formConfig['fieldOptions'],
             'formMode' => 'edit',
         ]);
     }
@@ -332,7 +345,9 @@ class AdminSectionController extends Controller
     {
         $this->ensureBelongsToSection($section, $record);
 
-        $record->update($this->validateRecord($request));
+        $data = $this->validateRecord($request, $section);
+        $data['record_type'] = $this->resolveRecordType($section, (string) ($data['record_type'] ?? $record->record_type ?? ''));
+        $record->update($data);
 
         return redirect()
             ->route('dashboard.section', $section)
@@ -444,7 +459,6 @@ class AdminSectionController extends Controller
                 'label' => 'HR & Payroll',
                 'icon' => 'HR',
                 'children' => [
-                    'hr-payroll' => ['label' => 'HR Overview', 'route' => ['dashboard.section', ['hr-payroll']]],
                     'employee-management' => ['label' => 'Employee Management', 'route' => ['dashboard.hr-payroll.page', ['employee-management']]],
                     'attendance' => ['label' => 'Attendance', 'route' => ['dashboard.hr-payroll.page', ['attendance']]],
                     'payroll' => ['label' => 'Payroll', 'route' => ['dashboard.hr-payroll.page', ['payroll']]],
@@ -509,27 +523,27 @@ class AdminSectionController extends Controller
                 ['label' => 'Low Stock', 'value' => Garment::query()->where('stock', '<=', 5)->count()],
             ],
             'customers' => [
-                ['label' => 'Customers', 'value' => DashboardRecord::query()->where('section', $section)->count()],
+                ['label' => 'Customers', 'value' => $this->safeDashboardCount($section)],
                 ['label' => 'New This Month', 'value' => 7],
                 ['label' => 'Repeat Buyers', 'value' => 12],
             ],
             'vendors' => [
-                ['label' => 'Approved Vendors', 'value' => DashboardRecord::query()->where('section', $section)->count()],
+                ['label' => 'Approved Vendors', 'value' => $this->safeDashboardCount($section)],
                 ['label' => 'Open POs', 'value' => 4],
                 ['label' => 'Lead Time Avg', 'value' => '7 days'],
             ],
             'master-data' => [
                 ['label' => 'Products', 'value' => Garment::query()->count()],
-                ['label' => 'Customers', 'value' => DashboardRecord::query()->where('section', 'customers')->count()],
-                ['label' => 'Vendors', 'value' => DashboardRecord::query()->where('section', 'vendors')->count()],
+                ['label' => 'Customers', 'value' => $this->safeDashboardCount('customers')],
+                ['label' => 'Vendors', 'value' => $this->safeDashboardCount('vendors')],
             ],
             'orders' => [
-                ['label' => 'Open Orders', 'value' => DashboardRecord::query()->where('section', 'sales-orders')->count()],
-                ['label' => 'Samples', 'value' => DashboardRecord::query()->where('section', 'samples')->count()],
+                ['label' => 'Open Orders', 'value' => $this->safeDashboardCount('sales-orders')],
+                ['label' => 'Samples', 'value' => $this->safeDashboardCount('samples')],
                 ['label' => 'Domestic/Export', 'value' => 'Nepal market'],
             ],
             'sales-orders' => [
-                ['label' => 'Open Orders', 'value' => DashboardRecord::query()->where('section', $section)->count()],
+                ['label' => 'Open Orders', 'value' => $this->safeDashboardCount($section)],
                 ['label' => 'Shipped', 'value' => 18],
                 ['label' => 'Backorder', 'value' => 2],
             ],
@@ -540,14 +554,14 @@ class AdminSectionController extends Controller
                 ['label' => 'Damaged Stock', 'value' => 0, 'tone' => 'violet', 'icon' => 'DS'],
             ],
             'samples' => [
-                ['label' => 'Sample Requests', 'value' => DashboardRecord::query()->where('section', $section)->count()],
+                ['label' => 'Sample Requests', 'value' => $this->safeDashboardCount($section)],
                 ['label' => 'Approved', 'value' => 2],
                 ['label' => 'Pending', 'value' => 3],
             ],
             'hr-payroll' => [
-                ['label' => 'Headcount', 'value' => max(12, DashboardRecord::query()->where('section', 'hr-payroll')->count() + 12)],
-                ['label' => 'Attendance Rate', 'value' => '96.4%'],
-                ['label' => 'Payroll Due', 'value' => '$48,250.00'],
+                ['label' => 'Headcount', 'value' => max(12, $this->safeHrPayrollCollection('employee-management')->count() + 12)],
+                ['label' => 'Present Today', 'value' => $this->safeHrPayrollCollection('attendance')->where('status', 'Present')->count()],
+                ['label' => 'Payroll Due', 'value' => 'Rs. ' . number_format($this->sumMoneyValues($this->safeHrPayrollCollection('payroll')), 2)],
             ],
             'finance' => [
                 ['label' => 'Cash Balance', 'value' => '$124,800.00', 'tone' => 'green', 'icon' => 'CB'],
@@ -555,9 +569,9 @@ class AdminSectionController extends Controller
                 ['label' => 'Payables', 'value' => '$22,150.00', 'tone' => 'amber', 'icon' => 'AP'],
             ],
             default => [
-                ['label' => 'Records', 'value' => DashboardRecord::query()->where('section', $section)->count()],
-                ['label' => 'Active', 'value' => DashboardRecord::query()->where('section', $section)->where('is_active', true)->count()],
-                ['label' => 'Archived', 'value' => DashboardRecord::query()->where('section', $section)->where('is_active', false)->count()],
+                ['label' => 'Records', 'value' => $this->safeDashboardCount($section)],
+                ['label' => 'Active', 'value' => $this->safeDashboardCountState($section, true)],
+                ['label' => 'Archived', 'value' => $this->safeDashboardCountState($section, false)],
             ],
         };
     }
@@ -963,6 +977,11 @@ class AdminSectionController extends Controller
 
     private function hrPayrollOverview(): array
     {
+        $employeeRecords = $this->safeHrPayrollCollection('employee-management');
+        $attendanceRecords = $this->safeHrPayrollCollection('attendance');
+        $leaveRecords = $this->safeHrPayrollCollection('leave-management');
+        $payrollRecords = $this->safeHrPayrollCollection('payroll');
+
         return [
             'quickActions' => [
                 ['label' => 'Employee Management', 'target' => 'employee-management'],
@@ -971,10 +990,10 @@ class AdminSectionController extends Controller
                 ['label' => 'Leave Management', 'target' => 'leave-management'],
             ],
             'stats' => [
-                ['label' => 'Headcount', 'value' => max(12, DashboardRecord::query()->where('section', 'hr-payroll')->count() + 12)],
-                ['label' => 'Present Today', 'value' => '11'],
-                ['label' => 'On Leave', 'value' => '2'],
-                ['label' => 'Payroll Due', 'value' => '$48,250.00'],
+                ['label' => 'Headcount', 'value' => max(12, $employeeRecords->count() + 12)],
+                ['label' => 'Present Today', 'value' => $this->countAttendancePeople($attendanceRecords, 'present_employees')],
+                ['label' => 'On Leave', 'value' => $leaveRecords->whereIn('status', ['Approved', 'Pending'])->count()],
+                ['label' => 'Payroll Due', 'value' => 'Rs. ' . number_format($this->sumMoneyValues($payrollRecords), 2)],
             ],
             'sections' => [
                 [
@@ -1015,6 +1034,353 @@ class AdminSectionController extends Controller
                 ],
             ],
         ];
+    }
+
+    private function hrPayrollMetrics(string $page): array
+    {
+        $records = $this->safeHrPayrollCollection($page);
+
+        return match ($page) {
+            'employee-management' => [
+                ['label' => 'Employees', 'value' => $records->count(), 'tone' => 'blue', 'icon' => 'EM'],
+                ['label' => 'Active', 'value' => $records->where('is_active', true)->count(), 'tone' => 'green', 'icon' => 'AC'],
+                ['label' => 'Departments', 'value' => $records->pluck('meta')->filter()->unique()->count(), 'tone' => 'amber', 'icon' => 'DP'],
+                ['label' => 'Latest Update', 'value' => $this->formatDateValue($records), 'tone' => 'violet', 'icon' => 'DT'],
+            ],
+            'attendance' => [
+                ['label' => 'Attendance Logs', 'value' => $records->count(), 'tone' => 'blue', 'icon' => 'AT'],
+                ['label' => 'Present Employees', 'value' => $this->countAttendancePeople($records, 'present_employees'), 'tone' => 'green', 'icon' => 'PR'],
+                ['label' => 'Absent Employees', 'value' => $this->countAttendancePeople($records, 'absent_employees'), 'tone' => 'amber', 'icon' => 'AB'],
+                ['label' => 'Latest Check-in', 'value' => $this->formatDateValue($records), 'tone' => 'violet', 'icon' => 'CI'],
+            ],
+            'payroll' => [
+                ['label' => 'Payroll Runs', 'value' => $records->count(), 'tone' => 'blue', 'icon' => 'PY'],
+                ['label' => 'Payroll Total', 'value' => 'Rs. ' . number_format($this->sumMoneyValues($records), 2), 'tone' => 'green', 'icon' => 'PT'],
+                ['label' => 'Processing', 'value' => $records->where('status', 'Processing')->count(), 'tone' => 'amber', 'icon' => 'PS'],
+                ['label' => 'Latest Run', 'value' => $this->formatDateValue($records), 'tone' => 'violet', 'icon' => 'DT'],
+            ],
+            'leave-management' => [
+                ['label' => 'Leave Requests', 'value' => $records->count(), 'tone' => 'blue', 'icon' => 'LV'],
+                ['label' => 'Approved', 'value' => $records->where('status', 'Approved')->count(), 'tone' => 'green', 'icon' => 'AP'],
+                ['label' => 'Pending', 'value' => $records->where('status', 'Pending')->count(), 'tone' => 'amber', 'icon' => 'PD'],
+                ['label' => 'Latest Update', 'value' => $this->formatDateValue($records), 'tone' => 'violet', 'icon' => 'DT'],
+            ],
+            'performance' => [
+                ['label' => 'Reviews', 'value' => $records->count(), 'tone' => 'blue', 'icon' => 'RV'],
+                ['label' => 'Completed', 'value' => $records->where('status', 'Completed')->count(), 'tone' => 'green', 'icon' => 'CP'],
+                ['label' => 'In Progress', 'value' => $records->where('status', 'In Progress')->count(), 'tone' => 'amber', 'icon' => 'IP'],
+                ['label' => 'Latest Update', 'value' => $this->formatDateValue($records), 'tone' => 'violet', 'icon' => 'DT'],
+            ],
+            default => [
+                ['label' => 'Records', 'value' => $records->count(), 'tone' => 'blue', 'icon' => 'HR'],
+                ['label' => 'Active', 'value' => $records->where('is_active', true)->count(), 'tone' => 'green', 'icon' => 'AC'],
+                ['label' => 'Inactive', 'value' => $records->where('is_active', false)->count(), 'tone' => 'amber', 'icon' => 'IN'],
+                ['label' => 'Latest Update', 'value' => $this->formatDateValue($records), 'tone' => 'violet', 'icon' => 'DT'],
+            ],
+        };
+    }
+
+    private function hrPayrollCalculation(string $page): string
+    {
+        return match ($page) {
+            'employee-management' => 'Headcount is based on employee records in this submenu, with active employees counted separately.',
+            'attendance' => 'Attendance is calculated from the present and absent employee lists saved in each attendance record.',
+            'payroll' => 'Payroll due is calculated by summing numeric amounts stored in the Value field of payroll records.',
+            'leave-management' => 'Leave totals are calculated from leave request records and their approval status.',
+            'performance' => 'Performance totals are calculated from review records, completion status, and update timestamps.',
+            default => 'Current HR values are calculated from the records stored in this submenu.',
+        };
+    }
+
+    private function hrPayrollRecordsQuery(?string $page = null): Builder
+    {
+        $query = DashboardRecord::query()->where('section', 'hr-payroll');
+
+        if ($page !== null && $this->hasHrPayrollTypedRecords($page)) {
+            return $query->where('record_type', $page)->latest();
+        }
+
+        return $query->latest();
+    }
+
+    private function hrPayrollFieldLabels(?string $page = null): array
+    {
+        return match ($page) {
+            'attendance' => [
+                'title' => 'Attendance Batch Title',
+                'meta' => 'Shift',
+                'status' => 'Attendance Status',
+                'value' => 'Summary Value',
+                'transaction_date' => 'Attendance Date',
+                'present_employees' => 'Present Employees',
+                'absent_employees' => 'Absent Employees',
+            ],
+            'payroll' => [
+                'title' => 'Payroll Batch Title',
+                'meta' => 'Payroll Month / Cycle',
+                'status' => 'Payroll Status',
+                'value' => 'Payroll Amount',
+            ],
+            'leave-management' => [
+                'title' => 'Leave Batch Title',
+                'meta' => 'Leave Period / Department',
+                'status' => 'Leave Status',
+                'value' => 'Leave Summary',
+            ],
+            'performance' => [
+                'title' => 'Review Title',
+                'meta' => 'Review Period',
+                'status' => 'Review Status',
+                'value' => 'Review Value',
+            ],
+            'employee-management' => [
+                'title' => 'Employee Name',
+                'meta' => 'Department / Designation',
+                'status' => 'Employment Status',
+                'value' => 'Role / Note',
+            ],
+            default => [
+                'title' => 'Title',
+                'meta' => 'Meta',
+                'status' => 'Status',
+                'value' => 'Value',
+            ],
+        };
+    }
+
+    private function formConfig(string $section, ?string $recordType = null): array
+    {
+        $recordTypeOptions = $section === 'hr-payroll'
+            ? array_map(fn (array $page): string => $page['title'], $this->hrPayrollPages())
+            : [];
+
+        return [
+            'recordTypeOptions' => $recordTypeOptions,
+            'fieldLabels' => $this->formFieldLabels($section, $recordType),
+            'fieldOptions' => $this->formFieldOptions($section, $recordType),
+        ];
+    }
+
+    private function formFieldLabels(string $section, ?string $recordType = null): array
+    {
+        if ($section === 'hr-payroll') {
+            return $this->hrPayrollFieldLabels($recordType);
+        }
+
+        return match ($section) {
+            'employees' => [
+                'title' => 'Employee Name',
+                'meta' => 'Department / Designation',
+                'status' => 'Employment Status',
+                'value' => 'Role / Note',
+                'employee_id' => 'Employee ID / Code',
+                'employment_type' => 'Employment Type',
+                'ssf_no' => 'SSF / Social Security No.',
+            ],
+            'attendance' => [
+                'title' => 'Attendance Batch Title',
+                'meta' => 'Attendance Date / Shift',
+                'status' => 'Attendance Status',
+                'value' => 'Summary Value',
+                'employee_id' => 'Employee ID / Code',
+                'present_employees' => 'Present Employees',
+                'absent_employees' => 'Absent Employees',
+            ],
+            'payroll' => [
+                'title' => 'Payroll Batch Title',
+                'meta' => 'Payroll Month / Cycle',
+                'status' => 'Payroll Status',
+                'value' => 'Payroll Amount',
+                'employee_id' => 'Employee ID / Code',
+                'employment_type' => 'Employment Type',
+            ],
+            'leave-management' => [
+                'title' => 'Leave Batch Title',
+                'meta' => 'Leave Period / Department',
+                'status' => 'Leave Status',
+                'value' => 'Leave Summary',
+                'employee_id' => 'Employee ID / Code',
+            ],
+            'performance' => [
+                'title' => 'Review Title',
+                'meta' => 'Review Period',
+                'status' => 'Review Status',
+                'value' => 'Review Value',
+                'employee_id' => 'Employee ID / Code',
+            ],
+            default => [
+                'title' => 'Title',
+                'meta' => 'Meta',
+                'status' => 'Status',
+                'value' => 'Value',
+            ],
+        };
+    }
+
+    private function formFieldOptions(string $section, ?string $recordType = null): array
+    {
+        $activeInactive = ['1' => 'Active', '0' => 'Inactive'];
+
+        return match ($section === 'hr-payroll' ? $recordType : $section) {
+            'attendance' => [
+                'status' => ['Present' => 'Present', 'Absent' => 'Absent', 'Late' => 'Late', 'Leave' => 'Leave'],
+                'is_active' => $activeInactive,
+            ],
+            'employees' => [
+                'status' => $activeInactive,
+                'is_active' => $activeInactive,
+            ],
+            'payroll' => [
+                'status' => ['Draft' => 'Draft', 'Processing' => 'Processing', 'Paid' => 'Paid'],
+                'is_active' => $activeInactive,
+            ],
+            'leave-management' => [
+                'status' => ['Pending' => 'Pending', 'Approved' => 'Approved', 'Rejected' => 'Rejected'],
+                'is_active' => $activeInactive,
+            ],
+            'performance' => [
+                'status' => ['Draft' => 'Draft', 'In Progress' => 'In Progress', 'Completed' => 'Completed'],
+                'is_active' => $activeInactive,
+            ],
+            default => [
+                'status' => [],
+                'is_active' => $activeInactive,
+            ],
+        };
+    }
+
+    private function countAttendancePeople($records, string $field): int
+    {
+        return $records->sum(function (DashboardRecord $record) use ($field): int {
+            $raw = (string) ($record->{$field} ?? '');
+            if (trim($raw) === '') {
+                return 0;
+            }
+
+            return count(array_filter(array_map('trim', preg_split('/[\r\n,]+/', $raw) ?: [])));
+        });
+    }
+
+    private function hasHrPayrollTypedRecords(string $page): bool
+    {
+        try {
+            return DashboardRecord::query()
+                ->where('section', 'hr-payroll')
+                ->where('record_type', $page)
+                ->exists();
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    private function safeHrPayrollCollection(?string $page = null)
+    {
+        try {
+            return $this->hrPayrollRecordsQuery($page)->get();
+        } catch (Throwable) {
+            return collect();
+        }
+    }
+
+    private function safeDashboardCount(string $section, ?string $recordType = null): int
+    {
+        try {
+            return DashboardRecord::query()
+                ->where('section', $section)
+                ->when($recordType !== null, fn (Builder $query) => $query->where('record_type', $recordType))
+                ->count();
+        } catch (Throwable) {
+            return 0;
+        }
+    }
+
+    private function safeDashboardCountState(string $section, bool $isActive): int
+    {
+        try {
+            return DashboardRecord::query()
+                ->where('section', $section)
+                ->where('is_active', $isActive)
+                ->count();
+        } catch (Throwable) {
+            return 0;
+        }
+    }
+
+    private function safeHrPayrollPaginator(?string $page = null, int $perPage = 10): LengthAwarePaginator
+    {
+        try {
+            return $this->hrPayrollRecordsQuery($page)->paginate($perPage)->withQueryString();
+        } catch (Throwable) {
+            return new LengthAwarePaginator([], 0, $perPage, 1, [
+                'path' => request()->url(),
+                'query' => request()->query(),
+            ]);
+        }
+    }
+
+    private function safeSectionPaginator(string $section, int $perPage = 10): LengthAwarePaginator
+    {
+        try {
+            return DashboardRecord::query()
+                ->where('section', $section)
+                ->latest()
+                ->paginate($perPage)
+                ->withQueryString();
+        } catch (Throwable) {
+            return new LengthAwarePaginator([], 0, $perPage, 1, [
+                'path' => request()->url(),
+                'query' => request()->query(),
+            ]);
+        }
+    }
+
+    private function resolveRecordType(string $section, string $recordType): ?string
+    {
+        if ($section !== 'hr-payroll') {
+            return null;
+        }
+
+        $recordType = trim($recordType);
+
+        return array_key_exists($recordType, $this->hrPayrollPages()) ? $recordType : null;
+    }
+
+    private function formatDateValue($records): string
+    {
+        $latest = $records->sortByDesc('updated_at')->first();
+
+        return $latest?->updated_at?->format('M d, Y') ?? 'N/A';
+    }
+
+    private function sumMoneyValues($records): float
+    {
+        return (float) $records->sum(function (DashboardRecord $record): float {
+            return $this->numericValue((string) ($record->value ?? ''));
+        });
+    }
+
+    private function numericValue(string $value): float
+    {
+        if (preg_match('/-?\d[\d,]*(?:\.\d+)?/', $value, $matches) !== 1) {
+            return 0.0;
+        }
+
+        return (float) str_replace(',', '', $matches[0]);
+    }
+
+    private function countTextMatches($records, array $needles): int
+    {
+        return $records->filter(function (DashboardRecord $record) use ($needles): bool {
+            $haystack = strtolower(trim(($record->status ?? '') . ' ' . ($record->meta ?? '') . ' ' . ($record->notes ?? '')));
+
+            foreach ($needles as $needle) {
+                if (str_contains($haystack, $needle)) {
+                    return true;
+                }
+            }
+
+            return false;
+        })->count();
     }
 
     private function hrPayrollPages(): array
@@ -1427,13 +1793,14 @@ class AdminSectionController extends Controller
         ];
     }
 
-    private function validateRecord(Request $request): array
+    private function validateRecord(Request $request, string $section): array
     {
-        return $request->validate([
+        $rules = [
             'title' => ['required', 'string', 'max:255'],
             'meta' => ['nullable', 'string', 'max:255'],
             'status' => ['nullable', 'string', 'max:120'],
             'value' => ['nullable', 'string', 'max:255'],
+            'record_type' => ['nullable', 'string', 'max:80'],
             'pan_vat' => ['nullable', 'string', 'max:120'],
             'province' => ['nullable', 'string', 'max:120'],
             'district' => ['nullable', 'string', 'max:120'],
@@ -1442,13 +1809,36 @@ class AdminSectionController extends Controller
             'order_type' => ['nullable', 'string', 'max:120'],
             'invoice_no' => ['nullable', 'string', 'max:120'],
             'due_date' => ['nullable', 'date'],
+            'transaction_date' => ['nullable', 'date'],
             'currency' => ['nullable', 'string', 'max:10'],
             'payment_mode' => ['nullable', 'string', 'max:120'],
             'employee_id' => ['nullable', 'string', 'max:120'],
             'employment_type' => ['nullable', 'string', 'max:120'],
+            'present_employees' => ['nullable', 'string', 'max:5000'],
+            'absent_employees' => ['nullable', 'string', 'max:5000'],
             'ssf_no' => ['nullable', 'string', 'max:120'],
             'notes' => ['nullable', 'string', 'max:2000'],
             'is_active' => ['nullable', 'boolean'],
-        ]);
+        ];
+
+        $fieldOptions = $this->formFieldOptions($section, $request->input('record_type'));
+
+        if (! empty($fieldOptions['status'])) {
+            $rules['status'] = ['nullable', 'string', 'max:120', Rule::in(array_keys($fieldOptions['status']))];
+        }
+
+        if ($section === 'hr-payroll' && in_array($request->input('record_type'), ['attendance', 'employee-management', 'payroll', 'leave-management', 'performance'], true)) {
+            $rules['record_type'] = ['required', 'string', 'max:80', Rule::in(array_keys($this->hrPayrollPages()))];
+        }
+
+        if ($section === 'hr-payroll' && ! isset($rules['record_type'])) {
+            $rules['record_type'] = ['required', 'string', 'max:80', Rule::in(array_keys($this->hrPayrollPages()))];
+        }
+
+        if (! empty($fieldOptions['is_active'])) {
+            $rules['is_active'] = ['nullable', 'boolean'];
+        }
+
+        return $request->validate($rules);
     }
 }

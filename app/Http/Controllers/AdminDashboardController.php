@@ -6,6 +6,8 @@ use App\Models\DashboardRecord;
 use App\Models\Garment;
 use Carbon\Carbon;
 use Illuminate\View\View;
+use Illuminate\Support\Facades\Schema;
+use Throwable;
 
 class AdminDashboardController extends Controller
 {
@@ -13,7 +15,8 @@ class AdminDashboardController extends Controller
     {
         $garments = Garment::query()->latest()->get();
         $inventoryValue = $garments->sum(fn (Garment $garment): float => (float) $garment->price * (int) $garment->stock);
-        $inventoryRecords = DashboardRecord::query()->where('section', 'inventory');
+        $inventoryCount = fn (string $recordType): int => $this->safeDashboardCount('inventory', $recordType);
+        $inventoryCountAny = fn (array $recordTypes): int => $this->safeDashboardCountAny('inventory', $recordTypes);
 
         return view('admin.dashboard', [
             'sidebarSection' => 'dashboard',
@@ -39,49 +42,49 @@ class AdminDashboardController extends Controller
                     'title' => 'Product Registration',
                     'description' => 'Add products, assign SKU/barcode, and store category, supplier, pricing, and unit details.',
                     'link' => route('admin.inventory-records.index', ['type' => 'product-registration']),
-                    'count' => $inventoryRecords->clone()->where('record_type', 'product-registration')->count(),
+                    'count' => $inventoryCount('product-registration'),
                 ],
                 [
                     'title' => 'Stock In',
                     'description' => 'Receive supplier inventory, save invoices, and increase stock automatically.',
                     'link' => route('admin.inventory-records.index', ['type' => 'stock-in']),
-                    'count' => $inventoryRecords->clone()->where('record_type', 'stock-in')->count(),
+                    'count' => $inventoryCount('stock-in'),
                 ],
                 [
                     'title' => 'Stock Out',
                     'description' => 'Issue inventory for sales or internal use while preventing negative stock if needed.',
                     'link' => route('admin.inventory-records.index', ['type' => 'stock-out']),
-                    'count' => $inventoryRecords->clone()->where('record_type', 'stock-out')->count(),
+                    'count' => $inventoryCount('stock-out'),
                 ],
                 [
                     'title' => 'Real-Time Tracking',
                     'description' => 'Track available, reserved, and damaged quantities with instant stock visibility.',
                     'link' => route('admin.inventory-records.index', ['type' => 'real-time-tracking']),
-                    'count' => $inventoryRecords->clone()->where('record_type', 'real-time-tracking')->count(),
+                    'count' => $inventoryCount('real-time-tracking'),
                 ],
                 [
                     'title' => 'Barcode / QR Support',
                     'description' => 'Use scanner-friendly entry to reduce manual errors and speed up operations.',
                     'link' => route('admin.inventory-records.index', ['type' => 'barcode-qr-support']),
-                    'count' => $inventoryRecords->clone()->where('record_type', 'barcode-qr-support')->count(),
+                    'count' => $inventoryCount('barcode-qr-support'),
                 ],
                 [
                     'title' => 'Supplier & Customer Management',
                     'description' => 'Maintain parties, contacts, histories, and purchase or sales records.',
                     'link' => route('admin.inventory-records.index', ['type' => 'supplier-management']),
-                    'count' => $inventoryRecords->clone()->whereIn('record_type', ['supplier-management', 'customer-management'])->count(),
+                    'count' => $inventoryCountAny(['supplier-management', 'customer-management']),
                 ],
                 [
                     'title' => 'Purchases, Sales, Transfers',
                     'description' => 'Manage purchase orders, invoices, returns, refunds, and warehouse transfers.',
                     'link' => route('admin.inventory-records.index', ['type' => 'purchase-management']),
-                    'count' => $inventoryRecords->clone()->whereIn('record_type', ['purchase-management', 'sales-management', 'inventory-transfers'])->count(),
+                    'count' => $inventoryCountAny(['purchase-management', 'sales-management', 'inventory-transfers']),
                 ],
                 [
                     'title' => 'Adjustments, Alerts, Reports',
                     'description' => 'Fix stock after counts, trigger low-stock alerts, and review analytics.',
                     'link' => route('admin.inventory-records.index', ['type' => 'stock-adjustments']),
-                    'count' => $inventoryRecords->clone()->whereIn('record_type', ['stock-adjustments', 'low-stock-alerts', 'reports-analytics'])->count(),
+                    'count' => $inventoryCountAny(['stock-adjustments', 'low-stock-alerts', 'reports-analytics']),
                 ],
             ],
             'recentActivity' => [
@@ -91,5 +94,37 @@ class AdminDashboardController extends Controller
                 ['title' => 'Invoice queued for approval', 'meta' => 'Today, 09:30'],
             ],
         ]);
+    }
+
+    private function safeDashboardCount(string $section, ?string $recordType = null): int
+    {
+        try {
+            if (! Schema::hasTable('dashboard_records')) {
+                return 0;
+            }
+
+            return DashboardRecord::query()
+                ->where('section', $section)
+                ->when($recordType !== null, fn ($query) => $query->where('record_type', $recordType))
+                ->count();
+        } catch (Throwable) {
+            return 0;
+        }
+    }
+
+    private function safeDashboardCountAny(string $section, array $recordTypes): int
+    {
+        try {
+            if (! Schema::hasTable('dashboard_records')) {
+                return 0;
+            }
+
+            return DashboardRecord::query()
+                ->where('section', $section)
+                ->whereIn('record_type', $recordTypes)
+                ->count();
+        } catch (Throwable) {
+            return 0;
+        }
     }
 }

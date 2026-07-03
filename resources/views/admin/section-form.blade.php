@@ -7,7 +7,7 @@
             <p>{{ $sectionMeta['subtitle'] }}</p>
         </div>
         <div class="updated">
-            <a class="pill" href="{{ route('dashboard.section', $sectionKey) }}">Back to list</a>
+            <a class="pill" href="{{ $sectionKey === 'hr-payroll' && !empty($recordType) ? route('dashboard.hr-payroll.page', $recordType) : route('dashboard.section', $sectionKey) }}">Back to list</a>
         </div>
     </div>
 
@@ -20,28 +20,56 @@
 
             <div class="form">
                 <div class="field">
-                    <label for="title">Title</label>
+                    <label for="title">{{ $fieldLabels['title'] ?? 'Title' }}</label>
                     <input id="title" name="title" value="{{ old('title', $record->title) }}" required>
                     @error('title')<div class="error">{{ $message }}</div>@enderror
                 </div>
 
                 <div class="field">
-                    <label for="meta">Meta</label>
-                    <input id="meta" name="meta" value="{{ old('meta', $record->meta) }}">
+                    <label for="meta">{{ $fieldLabels['meta'] ?? 'Meta' }}</label>
+                    <input
+                        id="meta"
+                        name="meta"
+                        value="{{ old('meta', $record->meta) }}"
+                        @if (($recordType ?? $record->record_type ?? '') === 'attendance') placeholder="Shift A, Shift B, Night" @endif
+                    >
                     @error('meta')<div class="error">{{ $message }}</div>@enderror
                 </div>
 
                 <div class="field">
-                    <label for="status">Status</label>
-                    <input id="status" name="status" value="{{ old('status', $record->status) }}">
+                    <label for="status">{{ $fieldLabels['status'] ?? 'Status' }}</label>
+                    @php($statusOptions = $fieldOptions['status'] ?? [])
+                    @if (! empty($statusOptions))
+                        <select id="status" name="status">
+                            <option value="">Select status</option>
+                            @foreach ($statusOptions as $value => $label)
+                                <option value="{{ $value }}" @selected(old('status', $record->status) === $value)>{{ $label }}</option>
+                            @endforeach
+                        </select>
+                    @else
+                        <input id="status" name="status" value="{{ old('status', $record->status) }}">
+                    @endif
                     @error('status')<div class="error">{{ $message }}</div>@enderror
                 </div>
 
                 <div class="field">
-                    <label for="value">Value</label>
+                    <label for="value">{{ $fieldLabels['value'] ?? 'Value' }}</label>
                     <input id="value" name="value" value="{{ old('value', $record->value) }}">
                     @error('value')<div class="error">{{ $message }}</div>@enderror
                 </div>
+
+                @if ($sectionKey === 'hr-payroll')
+                    <div class="field">
+                        <label for="record_type">Sub-menu</label>
+                        <select id="record_type" name="record_type" required>
+                            <option value="">Select submenu</option>
+                            @foreach ($recordTypeOptions as $key => $label)
+                                <option value="{{ $key }}" @selected(old('record_type', $recordType ?? $record->record_type) === $key)>{{ $label }}</option>
+                            @endforeach
+                        </select>
+                        @error('record_type')<div class="error">{{ $message }}</div>@enderror
+                    </div>
+                @endif
 
                 @if (in_array($sectionKey, ['master-data', 'orders', 'finance'], true))
                     <div class="card" style="grid-column:1 / -1;box-shadow:none;background:#f8fafc;">
@@ -128,25 +156,48 @@
                 @if ($sectionKey === 'hr-payroll')
                     <div class="card" style="grid-column:1 / -1;box-shadow:none;background:#f8fafc;">
                         <div class="section-title">
-                            <h2>HR Compliance Details</h2>
-                            <span class="pill">Employee record</span>
+                            @php($currentHrType = $recordType ?? $record->record_type ?? '')
+                            <h2>{{ $recordTypeOptions[$currentHrType] ?? 'HR Details' }}</h2>
+                            <span class="pill">{{ $currentHrType ?: 'HR record' }}</span>
                         </div>
 
                         <div class="content-grid">
+                            @if ($currentHrType === 'attendance')
+                                <div class="field">
+                                    <label for="transaction_date">{{ $fieldLabels['transaction_date'] ?? 'Attendance Date' }}</label>
+                                    <input id="transaction_date" type="date" name="transaction_date" value="{{ old('transaction_date', optional($record->transaction_date)->format('Y-m-d')) }}">
+                                    @error('transaction_date')<div class="error">{{ $message }}</div>@enderror
+                                </div>
+                            @endif
+
                             <div class="field">
-                                <label for="employee_id">Employee ID</label>
+                                <label for="employee_id">{{ $fieldLabels['employee_id'] ?? 'Employee ID / Code' }}</label>
                                 <input id="employee_id" name="employee_id" value="{{ old('employee_id', $record->employee_id) }}" placeholder="Employee ID">
                                 @error('employee_id')<div class="error">{{ $message }}</div>@enderror
                             </div>
 
                             <div class="field">
-                                <label for="employment_type">Employment Type</label>
+                                <label for="employment_type">{{ $fieldLabels['employment_type'] ?? 'Employment Type' }}</label>
                                 <input id="employment_type" name="employment_type" value="{{ old('employment_type', $record->employment_type) }}" placeholder="Permanent, Contract, Part-time">
                                 @error('employment_type')<div class="error">{{ $message }}</div>@enderror
                             </div>
 
+                            @if ($currentHrType === 'attendance')
+                                <div class="field" style="grid-column:1 / -1;">
+                                    <label for="present_employees">{{ $fieldLabels['present_employees'] ?? 'Present Employees' }}</label>
+                                    <textarea id="present_employees" name="present_employees" rows="4" placeholder="Enter one employee per line or separate with commas">{{ old('present_employees', $record->present_employees) }}</textarea>
+                                    @error('present_employees')<div class="error">{{ $message }}</div>@enderror
+                                </div>
+
+                                <div class="field" style="grid-column:1 / -1;">
+                                    <label for="absent_employees">{{ $fieldLabels['absent_employees'] ?? 'Absent Employees' }}</label>
+                                    <textarea id="absent_employees" name="absent_employees" rows="4" placeholder="Enter one employee per line or separate with commas">{{ old('absent_employees', $record->absent_employees) }}</textarea>
+                                    @error('absent_employees')<div class="error">{{ $message }}</div>@enderror
+                                </div>
+                            @endif
+
                             <div class="field">
-                                <label for="ssf_no">SSF / Social Security No.</label>
+                                <label for="ssf_no">{{ $fieldLabels['ssf_no'] ?? 'SSF / Social Security No.' }}</label>
                                 <input id="ssf_no" name="ssf_no" value="{{ old('ssf_no', $record->ssf_no) }}" placeholder="SSF number">
                                 @error('ssf_no')<div class="error">{{ $message }}</div>@enderror
                             </div>
@@ -161,16 +212,19 @@
                 </div>
 
                 <div class="field">
-                    <label>
-                        <input type="hidden" name="is_active" value="0">
-                        <input type="checkbox" name="is_active" value="1" @checked(old('is_active', $record->is_active ?? true))>
-                        Active
-                    </label>
+                    <label for="is_active">Record Status</label>
+                    @php($isActiveValue = old('is_active', isset($record->is_active) ? (string) (int) $record->is_active : '1'))
+                    <select id="is_active" name="is_active">
+                        @foreach (($fieldOptions['is_active'] ?? ['1' => 'Active', '0' => 'Inactive']) as $value => $label)
+                            <option value="{{ $value }}" @selected((string) $isActiveValue === (string) $value)>{{ $label }}</option>
+                        @endforeach
+                    </select>
+                    @error('is_active')<div class="error">{{ $message }}</div>@enderror
                 </div>
 
                 <div class="form-actions">
                     <button class="button primary" type="submit">{{ $formMode === 'create' ? 'Create Record' : 'Update Record' }}</button>
-                    <a class="button secondary" href="{{ route('dashboard.section', $sectionKey) }}">Cancel</a>
+                    <a class="button secondary" href="{{ $sectionKey === 'hr-payroll' && !empty($recordType) ? route('dashboard.hr-payroll.page', $recordType) : route('dashboard.section', $sectionKey) }}">Cancel</a>
                 </div>
             </div>
         </form>

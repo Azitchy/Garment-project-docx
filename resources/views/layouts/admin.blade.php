@@ -543,7 +543,7 @@
 
         .field label {
             font-weight: 500;
-            color: rgba(255, 255, 255, 0.94);
+            color: #0f172a;
         }
 
         .field input,

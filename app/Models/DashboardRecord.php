@@ -57,6 +57,8 @@ class DashboardRecord extends Model
         'payment_mode',
         'employee_id',
         'employment_type',
+        'present_employees',
+        'absent_employees',
         'ssf_no',
         'notes',
         'is_active',
